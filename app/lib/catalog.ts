@@ -5,9 +5,11 @@ import {
   identifierVariants,
   identifiersEqual,
 } from "./ai/identifiers";
+import { searchVerifiedCatalogueSnapshot } from "./catalog-snapshot";
 
 const CATALOG_ORIGIN = "https://assetmatrixenergy.com";
 const PRODUCTS_ENDPOINT = `${CATALOG_ORIGIN}/wp-json/wp/v2/amel-products`;
+const PAGES_ENDPOINT = `${CATALOG_ORIGIN}/wp-json/wp/v2/pages`;
 const MAX_RESULTS = 4;
 const MAX_SEARCH_REQUESTS = 2;
 
@@ -109,6 +111,8 @@ export type AssetMatrixWordPressProduct = {
     "wp:featuredmedia"?: WordPressMedia[];
   };
 };
+
+export type AssetMatrixWordPressPage = AssetMatrixWordPressProduct;
 
 export type CatalogProduct = {
   id: number;
@@ -261,6 +265,32 @@ async function fetchProducts(
   return Array.isArray(data) ? (data as AssetMatrixWordPressProduct[]) : [];
 }
 
+async function fetchPages(
+  query: string,
+): Promise<AssetMatrixWordPressPage[]> {
+  const url = new URL(PAGES_ENDPOINT);
+  url.searchParams.set("search", query);
+  url.searchParams.set("per_page", "5");
+  url.searchParams.set("status", "publish");
+  url.searchParams.set("_embed", "1");
+
+  const response = await fetch(url, {
+    headers: {
+      Accept: "application/json",
+      "User-Agent": "A-Matrix-Support/2.0",
+    },
+    next: { revalidate: 300 },
+    signal: AbortSignal.timeout(10_000),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Catalogue page request failed with ${response.status}`);
+  }
+
+  const data: unknown = await response.json();
+  return Array.isArray(data) ? (data as AssetMatrixWordPressPage[]) : [];
+}
+
 export function normalizeAssetMatrixProduct(
   product: AssetMatrixWordPressProduct,
 ): CatalogProduct | null {
@@ -304,6 +334,113 @@ export function normalizeAssetMatrixProduct(
         : null,
     categories,
   };
+}
+
+type PageHeading = {
+  level: number;
+  name: string;
+  anchor: string | null;
+  start: number;
+  bodyStart: number;
+};
+
+function sectionScore(
+  name: string,
+  body: string,
+  query: string,
+  tokens: string[],
+): number {
+  const normalizedName = name.toLowerCase();
+  const normalizedBody = body.toLowerCase();
+  const normalizedQuery = query.toLowerCase();
+  let score = 0;
+
+  if (normalizedName === normalizedQuery) score += 200;
+  if (normalizedName.includes(normalizedQuery)) score += 120;
+  if (normalizedBody.includes(normalizedQuery)) score += 70;
+  for (const token of tokens) {
+    if (normalizedName.includes(token)) score += 18;
+    if (normalizedBody.includes(token)) score += 3;
+  }
+  return score;
+}
+
+function headingAnchor(attributes: string): string | null {
+  const match = attributes.match(/\bid=["']([^"']+)["']/i)?.[1];
+  return match ? encodeURIComponent(match) : null;
+}
+
+export function extractProductsFromWordPressPage(
+  page: AssetMatrixWordPressPage,
+  query: string,
+  tokens: string[],
+): CatalogProduct[] {
+  if (typeof page.id !== "number") return [];
+  const pageUrl = safeCatalogUrl(page.link);
+  const html = page.content?.rendered ?? "";
+  if (!pageUrl || !html) return [];
+
+  const headings: PageHeading[] = [];
+  const headingPattern = /<h([1-6])([^>]*)>([\s\S]*?)<\/h\1>/gi;
+  for (const match of html.matchAll(headingPattern)) {
+    const name = decodeText(match[3] ?? "");
+    if (!name || match.index === undefined) continue;
+    headings.push({
+      level: Number(match[1]),
+      name,
+      anchor: headingAnchor(match[2] ?? ""),
+      start: match.index,
+      bodyStart: match.index + match[0].length,
+    });
+  }
+
+  const pageTitle = decodeText(page.title?.rendered ?? "");
+  const candidates = headings.map((heading, index) => {
+    const nextSibling = headings
+      .slice(index + 1)
+      .find((candidate) => candidate.level <= heading.level);
+    const end = nextSibling?.start ?? html.length;
+    const bodyHtml = html.slice(heading.bodyStart, end);
+    const body = decodeText(bodyHtml);
+    return {
+      heading,
+      body,
+      bodyHtml,
+      score: sectionScore(heading.name, body, query, tokens),
+      index,
+    };
+  });
+
+  return candidates
+    .filter((candidate) => candidate.score >= 18)
+    .sort((left, right) => right.score - left.score)
+    .slice(0, 3)
+    .map((candidate) => {
+      const imageCandidate = candidate.bodyHtml.match(
+        /<img[^>]+src=["']([^"']+)["']/i,
+      )?.[1];
+      const imageUrl = safeCatalogUrl(imageCandidate);
+      const url = candidate.heading.anchor
+        ? `${pageUrl}#${candidate.heading.anchor}`
+        : pageUrl;
+
+      return {
+        id: page.id! * 100 + candidate.index,
+        name: candidate.heading.name,
+        url,
+        sku: null,
+        summary: candidate.body.slice(0, 900),
+        listedPrice: "Quotation required",
+        availability: "Availability requires confirmation",
+        image: imageUrl
+          ? { url: imageUrl, alt: candidate.heading.name }
+          : null,
+        categories:
+          pageTitle && pageTitle !== candidate.heading.name
+            ? [pageTitle]
+            : [],
+      };
+    });
 }
 
 function scoreProduct(
@@ -351,10 +488,38 @@ export async function searchPublishedCatalog(
     };
   }
 
+  const verifiedProducts = searchVerifiedCatalogueSnapshot(prompt);
+  if (verifiedProducts.length > 0) {
+    return {
+      query: displayQuery,
+      products: verifiedProducts.slice(0, MAX_RESULTS),
+      retrievedAt: new Date().toISOString(),
+      exactIdentifier,
+    };
+  }
+
   const productsById = new Map<number, CatalogProduct>();
   let successfulRequest = false;
 
   for (const query of queries) {
+    try {
+      const pages = await fetchPages(query);
+      successfulRequest = true;
+      for (const page of pages) {
+        for (const product of extractProductsFromWordPressPage(
+          page,
+          query,
+          tokens,
+        )) {
+          productsById.set(product.id, product);
+        }
+      }
+    } catch {
+      // The custom-product collection can still succeed when page search fails.
+    }
+
+    if (productsById.size >= MAX_RESULTS) break;
+
     try {
       const rawProducts = await fetchProducts(query);
       successfulRequest = true;
@@ -362,11 +527,11 @@ export async function searchPublishedCatalog(
         const product = normalizeAssetMatrixProduct(rawProduct);
         if (product) productsById.set(product.id, product);
       }
-
-      if (rawProducts.length >= MAX_RESULTS) break;
     } catch {
-      // A second normalized query may still succeed if the site rejects one.
+      // A second normalized query may still succeed if this one is rejected.
     }
+
+    if (productsById.size >= MAX_RESULTS) break;
   }
 
   const products = [...productsById.values()]

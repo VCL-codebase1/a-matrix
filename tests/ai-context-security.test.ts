@@ -5,7 +5,12 @@ import {
   estimateTokens,
 } from "../app/lib/ai/context-builder";
 import { thinkingConfigForLevel } from "../app/lib/ai/client";
-import { normalizeAssetMatrixProduct } from "../app/lib/catalog";
+import {
+  extractProductsFromWordPressPage,
+  normalizeAssetMatrixProduct,
+  searchPublishedCatalog,
+} from "../app/lib/catalog";
+import { searchVerifiedCatalogueSnapshot } from "../app/lib/catalog-snapshot";
 import {
   normalizeConversationState,
   updateConversationState,
@@ -117,6 +122,9 @@ describe("context budgets", () => {
     );
     expect(first.systemInstruction).toBe(second.systemInstruction);
     expect(estimateTokens(first.systemInstruction)).toBeLessThan(1500);
+    expect(first.systemInstruction).toContain(
+      "Product context IDs are internal selection handles",
+    );
   });
 });
 
@@ -146,6 +154,69 @@ describe("product and response serialization", () => {
       availability: "Availability requires confirmation",
       categories: ["Test & Measurement"],
     });
+  });
+
+  it("extracts a matching product section from a broader catalogue page", () => {
+    const products = extractProductsFromWordPressPage(
+      {
+        id: 81,
+        link: "https://assetmatrixenergy.com/power-factor-tan-delta-test-set/",
+        title: { rendered: "Power Factor/Tan Delta Test set" },
+        content: {
+          rendered: `
+            <h2>Bushing Tap Adapter Kit Capacitance And Tan Delta Test</h2>
+            <p>Designed for capacitance and tan delta tests on power transformer bushings.</p>
+            <p>Compatible with ISA STS 5000 TD 5000, STS 4000 TD 5000 and TDX 5000.</p>
+            <h4>Characteristics</h4>
+            <p>Includes bushing adapters, probes, hot collar straps and test leads.</p>
+            <h2>Another Product</h2>
+            <p>Unrelated information.</p>
+          `,
+        },
+      },
+      "bushing tap adapter kit",
+      ["bushing", "tap", "adapter", "kit"],
+    );
+
+    expect(products[0].name).toContain("Bushing Tap Adapter Kit");
+    expect(products[0].summary).toContain("STS 5000");
+    expect(products[0].summary).toContain("hot collar straps");
+    expect(products[0].categories).toEqual([
+      "Power Factor/Tan Delta Test set",
+    ]);
+  });
+
+  it("finds the verified bushing kit without depending on a live crawl", () => {
+    const products = searchVerifiedCatalogueSnapshot(
+      "I'm looking for a bushing tap adapter kit",
+    );
+
+    expect(products).toHaveLength(1);
+    expect(products[0].name).toContain("Bushing Tap Adapter Kit");
+    expect(products[0].summary).toContain("STS 5000 TD 5000");
+    expect(products[0].summary).toContain("hot-collar straps");
+    expect(products[0].url).toBe(
+      "https://assetmatrixenergy.com/power-factor-tan-delta-test-set/",
+    );
+  });
+
+  it("uses the verified snapshot before making a network request", async () => {
+    const previousFetch = globalThis.fetch;
+    let fetchCalls = 0;
+    globalThis.fetch = (async () => {
+      fetchCalls += 1;
+      throw new Error("network should not be needed");
+    }) as typeof fetch;
+
+    try {
+      const result = await searchPublishedCatalog(
+        "I'm looking for a bushing tap adapter kit",
+      );
+      expect(result.products[0].name).toContain("Bushing Tap Adapter Kit");
+      expect(fetchCalls).toBe(0);
+    } finally {
+      globalThis.fetch = previousFetch;
+    }
   });
 
   it("rejects product links outside assetmatrixenergy.com", () => {

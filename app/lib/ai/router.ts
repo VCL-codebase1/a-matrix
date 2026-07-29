@@ -23,7 +23,9 @@ const RECOMMENDATION_PATTERN =
 const SUPPORT_PATTERN =
   /\b(?:technical support|repair|maintenance|fault|error message|not working|broken)\b/i;
 const PRODUCT_PATTERN =
-  /\b(?:product|item|model|part|sku|catalogue|equipment|instrument|chemical|reagent|price|stock|availability|source|find)\b/i;
+  /\b(?:product|item|model|part|sku|catalogue|equipment|instrument|chemical|reagent|kit|adapter|tester|meter|analyzer|valve|pump|sensor|camera|price|stock|availability|source|find)\b/i;
+const PRODUCT_REQUEST_PATTERN =
+  /\b(?:looking for|trying to find|need to source|want to source|do you (?:have|supply|stock))\b/i;
 
 export function inferIntent(message: string): AIIntent {
   if (PRIVATE_RECORD_PATTERN.test(message)) return "order_status";
@@ -32,7 +34,12 @@ export function inferIntent(message: string): AIIntent {
   if (COMPARISON_PATTERN.test(message)) return "product_comparison";
   if (RECOMMENDATION_PATTERN.test(message)) return "technical_recommendation";
   if (SUPPORT_PATTERN.test(message)) return "support_request";
-  if (PRODUCT_PATTERN.test(message)) return "product_search";
+  if (
+    PRODUCT_PATTERN.test(message) ||
+    PRODUCT_REQUEST_PATTERN.test(message)
+  ) {
+    return "product_search";
+  }
   return "general_enquiry";
 }
 

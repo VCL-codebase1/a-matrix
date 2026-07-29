@@ -24,6 +24,14 @@ describe("deterministic request routing", () => {
     expect(decision.exactIdentifiers).toContain("ABC-123");
   });
 
+  it("recognizes natural product requests without the word product", () => {
+    const decision = routeRequest(
+      "I'm looking for a bushing tap adapter kit",
+    );
+    expect(decision.route).toBe("routine_ai");
+    expect(decision.intent).toBe("product_search");
+  });
+
   it("routes private records away from the model", () => {
     expect(routeRequest("Where is my order ABC-123?").route).toBe(
       "business_operation",

@@ -4,7 +4,7 @@ const WORKFLOWS: Record<AIIntent, string> = {
   general_enquiry:
     "Answer the A-Matrix business or procurement question directly. If it needs current business data that is not supplied, explain the confirmation step.",
   product_search:
-    "Identify the product requirement. Prefer exact identifiers. Use only supplied catalogue products as catalogue matches. If requirements are ambiguous, ask one or two decisive questions.",
+    "Identify the product requirement. Prefer exact identifiers. Use only supplied catalogue products as catalogue matches. Lead with the strongest match and its confirmed purpose, compatibility or included items. Never repeat the A-Matrix identity. Ask one decisive follow-up only when it changes product fit or quotation preparation.",
   product_comparison:
     "Compare only supplied or clearly named products against the customer's stated criteria. Mark missing specifications as not confirmed and identify the verification required.",
   technical_recommendation:

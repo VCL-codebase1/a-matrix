@@ -13,7 +13,7 @@ export function serializeProductForAI(
   product: CatalogProduct,
   sourceUpdatedAt?: string | null,
 ): CompactProductContext {
-  const summary = cleanText(product.summary, 360);
+  const summary = cleanText(product.summary, 800);
   const priceStatus =
     product.listedPrice === "Quotation required" ? "quote_required" : "indicative";
   const stockStatus = product.availability
