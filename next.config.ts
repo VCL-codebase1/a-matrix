@@ -14,6 +14,16 @@ const nextConfig: NextConfig = {
         hostname: "www.assetmatrixenergy.com",
         pathname: "/**",
       },
+      {
+        protocol: "https",
+        hostname: "a-matrix.ng",
+        pathname: "/**",
+      },
+      {
+        protocol: "https",
+        hostname: "www.a-matrix.ng",
+        pathname: "/**",
+      },
     ],
   },
 };

@@ -11,6 +11,8 @@ import { chatRequestSchema } from "../../lib/ai/request-schema";
 import { recordRateLimitEvent } from "../../lib/ai/usage";
 import { searchPublishedCatalog } from "../../lib/catalog";
 import { createChatEventStream } from "../../lib/chat-stream";
+import { searchKnowledgeBase } from "../../lib/db/knowledge";
+import { persistChatExchange } from "../../lib/db/persistence";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -57,11 +59,23 @@ export async function POST(request: NextRequest) {
         ip: requestIp(request),
         config,
       },
-      { searchCatalog: searchPublishedCatalog },
+      {
+        searchCatalog: searchPublishedCatalog,
+        searchKnowledge: (message) => searchKnowledgeBase(message, config),
+      },
     );
+    const persistence = persistChatExchange({
+      request: parsed.data,
+      outcome,
+    });
 
     return new Response(
-      createChatEventStream(outcome, { signal: request.signal }),
+      createChatEventStream(outcome, {
+        signal: request.signal,
+        beforeComplete: async () => {
+          await persistence;
+        },
+      }),
       {
         headers: {
           "Content-Type": "application/x-ndjson; charset=utf-8",

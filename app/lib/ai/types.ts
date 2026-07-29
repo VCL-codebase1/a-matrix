@@ -98,12 +98,21 @@ export type CompactProductContext = {
   sourceUpdatedAt?: string;
 };
 
+export type CompactKnowledgeChunk = {
+  id: string;
+  title: string;
+  sourceUrl: string;
+  content: string;
+  similarity: number;
+};
+
 export interface BuildAIContextInput {
   route: "routine_ai" | "complex_ai";
   intent: AIIntent;
   conversationState: ConversationState;
   recentMessages: ChatMessage[];
   retrievedProducts?: CompactProductContext[];
+  retrievedKnowledge?: CompactKnowledgeChunk[];
   workflowContext?: string;
   currentMessage: string;
 }

@@ -67,3 +67,7 @@ export function searchVerifiedCatalogueSnapshot(
     return matchedTerms.length >= 3 && queryTerms.has("bushing");
   }).map((entry) => entry.product);
 }
+
+export function verifiedCatalogueProducts(): CatalogProduct[] {
+  return VERIFIED_CATALOGUE.map((entry) => entry.product);
+}

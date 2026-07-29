@@ -8,6 +8,11 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "catalog:sync": "node --env-file=.env scripts/sync-catalog.mjs",
+    "catalog:embed": "node --env-file=.env scripts/sync-catalog.mjs --embeddings-only",
+    "catalog:seed": "node --env-file=.env scripts/seed-verified-catalog.mjs",
+    "db:check": "node --env-file=.env scripts/check-supabase.mjs",
+    "db:migrate": "node scripts/apply-migration.mjs",
     "start": "next start",
     "lint": "eslint .",
     "test:unit": "vitest run",
@@ -15,6 +20,8 @@
   },
   "dependencies": {
     "@google/genai": "^2.13.0",
+    "@supabase/supabase-js": "^2.57.0",
+    "cheerio": "^1.1.2",
     "next": "^16.2.12",
     "react": "19.2.6",
     "react-dom": "19.2.6",
@@ -23,10 +30,12 @@
   "devDependencies": {
     "@tailwindcss/postcss": "4.2.1",
     "@types/node": "22.19.19",
+    "@types/pg": "^8.15.0",
     "@types/react": "19.2.14",
     "@types/react-dom": "19.2.3",
     "eslint": "9.39.4",
     "eslint-config-next": "^16.2.12",
+    "pg": "^8.16.0",
     "tailwindcss": "4.2.1",
     "typescript": "5.9.3",
     "vitest": "^4.1.10"

@@ -6,6 +6,7 @@ import {
   identifiersEqual,
 } from "./ai/identifiers";
 import { searchVerifiedCatalogueSnapshot } from "./catalog-snapshot";
+import { searchDatabaseCatalog } from "./db/catalog";
 
 const CATALOG_ORIGIN = "https://assetmatrixenergy.com";
 const PRODUCTS_ENDPOINT = `${CATALOG_ORIGIN}/wp-json/wp/v2/amel-products`;
@@ -485,6 +486,16 @@ export async function searchPublishedCatalog(
       products: [],
       retrievedAt: null,
       exactIdentifier: null,
+    };
+  }
+
+  const databaseProducts = await searchDatabaseCatalog(displayQuery);
+  if (databaseProducts.length > 0) {
+    return {
+      query: displayQuery,
+      products: databaseProducts,
+      retrievedAt: new Date().toISOString(),
+      exactIdentifier,
     };
   }
 

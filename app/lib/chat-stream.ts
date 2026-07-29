@@ -34,6 +34,7 @@ export function createChatEventStream(
     signal?: AbortSignal;
     intervalMs?: number;
     productRevealDelayMs?: number;
+    beforeComplete?: () => Promise<void>;
   } = {},
 ): ReadableStream<Uint8Array> {
   const intervalMs = options.intervalMs ?? 30;
@@ -58,6 +59,9 @@ export function createChatEventStream(
           }
 
           if (!options.signal?.aborted) {
+            if (options.beforeComplete) {
+              await options.beforeComplete();
+            }
             if (productRevealDelayMs > 0 && outcome.products.length > 0) {
               await new Promise((resolve) =>
                 setTimeout(resolve, productRevealDelayMs),

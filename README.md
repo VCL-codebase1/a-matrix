@@ -15,13 +15,15 @@ The main endpoint is `POST /api/chat`. Each request is handled in this order:
 3. Search the public Asset Matrix Energy WordPress product catalogue only for
    product-related intents.
 4. Prefer exact SKU, model and part-number variants before keyword ranking.
-5. Sanitize sensitive data before constructing model context.
-6. Build a compact context from a stable core instruction, one workflow module,
-   structured state, at most five products, four recent turns and the current
-   message.
-7. Enforce route-specific input and output budgets.
-8. Return one validated structured response containing the answer, extracted
-   requirements and the next action.
+5. Retrieve relevant A-Matrix knowledge through Supabase pgvector when the
+   database and embedding model are configured.
+6. Sanitize sensitive data before constructing model context or persistence.
+7. Build a compact context from a stable core instruction, one workflow module,
+   structured state, at most five products, bounded knowledge chunks, four
+   recent turns and the current message.
+8. Enforce route-specific input and output budgets.
+9. Stream the validated answer first, reveal products afterward and persist the
+   exchange to Supabase without making database availability customer-critical.
 
 Normal customer messages therefore use zero or one generation request. A single
 retry is allowed only for a transient server failure; rate-limit responses are
@@ -41,18 +43,44 @@ The following are handled without generation:
 - Human escalation
 - Exact SKU, model and part-number catalogue lookup
 
-## Catalogue retrieval
+## Catalogue retrieval and sync
 
-The server searches the public `amel-products` WordPress REST collection at
-`assetmatrixenergy.com`. It normalizes product identifiers, searches
-punctuation variants, performs keyword retrieval, deduplicates and ranks
-results, and sends no more than five compact product records to generation.
-The source does not expose live price, stock or authenticated commercial data,
-so those fields always require confirmation.
+The primary catalogue is the private Supabase database. The chat searches
+normalized product names, manufacturers, models, SKUs, descriptions and
+specification values before using the public-site lookup as a temporary
+fallback. No more than five compact records are sent to generation.
 
-Catalogue requests use Next.js' five-minute server cache. Public response
-caching also uses a five-minute default. Website price and stock labels remain
-indicative; final price, tax, availability and delivery require confirmation.
+`npm run catalog:sync` crawls both authoritative public sources:
+
+- `a-matrix.ng` through its WooCommerce Store API, with product-sitemap and
+  HTML parsing fallback.
+- `assetmatrixenergy.com` through its custom product collection and
+  specification-rich WordPress pages, with sitemap fallback.
+
+Each run upserts structured products, replaces only source-managed
+specifications and embeds changed catalogue content into pgvector. It is safe
+to rerun:
+
+```bash
+npm run catalog:sync
+npm run catalog:sync -- --source=a-matrix.ng
+npm run catalog:sync -- --source=assetmatrixenergy.com
+npm run catalog:sync -- --limit=20
+npm run catalog:sync -- --skip-embeddings
+npm run catalog:embed
+```
+
+Set `sync_locked=true` on a product before editing its main fields manually;
+future crawls will retain those edits. Add a specification with
+`source_managed=false` to preserve it across syncs. The latest normalized
+source payload remains in `source_snapshot` for comparison and manual merging.
+Price and availability labels remain indicative unless an authenticated
+commercial system supplies them.
+
+If Gemini reaches its embedding quota, the product/specification sync can
+finish with `--skip-embeddings`. Run `npm run catalog:embed` after quota
+resets; it reads from Supabase and embeds only products that do not already
+have a knowledge document.
 
 ## Conversation state
 
@@ -60,11 +88,40 @@ The browser sends a random session ID, request ID, up to four recent turns and
 compact structured state. Full conversation history is never resent
 indefinitely. Starting over creates a new session and clears the state.
 
-This project still has no database. State, rate limits, idempotency entries,
-response caching and usage records are warm-instance memory only. That is useful
-for local development and duplicate requests hitting the same Vercel function
-instance, but it is not a durable cross-instance guarantee. Production should
-move those stores to a shared service such as Vercel KV/Redis or a database.
+When Supabase is configured, each sanitized user/assistant exchange and compact
+conversation state is persisted in `chat_sessions` and `chat_messages`.
+Application rate limits, idempotency entries, response caching and aggregate
+usage counters remain warm-instance memory and should move to a distributed
+store before high-volume production use.
+
+## Supabase and pgvector
+
+Apply the ordered SQL files in
+[`supabase/migrations`](supabase/migrations) in the Supabase SQL Editor or run
+`node scripts/apply-migration.mjs` with the session-pooler connection
+environment variables. The migrations:
+
+- Enables the `vector` extension.
+- Creates private conversation and message tables.
+- Creates knowledge-document and 768-dimensional knowledge-chunk tables.
+- Adds an HNSW cosine index.
+- Adds the server-only `match_knowledge_chunks` retrieval function.
+- Enables RLS with no browser-facing policies.
+- Creates editable catalogue products, specification rows and sync-run audit
+  records.
+- Adds trigram indexes and the server-only `search_catalog_products` function.
+
+After applying the migration, set `AI_ADMIN_TOKEN`, start the app and index the
+verified catalogue snapshot:
+
+```bash
+curl -X POST http://localhost:3000/api/internal/knowledge/reindex \
+  -H "Authorization: Bearer YOUR_ADMIN_TOKEN"
+```
+
+The indexing endpoint embeds catalogue content with
+`GEMINI_EMBEDDING_MODEL`, stores it in pgvector and can be called again safely
+when approved source content changes.
 
 ## Privacy and security
 
@@ -91,6 +148,9 @@ Copy `.env.example` to `.env.local` and provide:
 GEMINI_API_KEY=your_server_key
 GEMINI_ROUTINE_MODEL=your_current_flash_lite_class_model
 GEMINI_COMPLEX_MODEL=your_current_flash_class_model
+GEMINI_EMBEDDING_MODEL=gemini-embedding-001
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_SECRET_KEY=your_server_only_secret
 ```
 
 Model identifiers are deliberately not hard-coded. Choose currently eligible
@@ -98,7 +158,8 @@ models for the project in Google AI Studio, then change the environment values
 without editing application code. `GEMINI_MODEL` remains a temporary backwards-
 compatibility fallback for existing local environments.
 
-See `.env.example` for token budgets, thinking controls, throttling, timeouts,
+Use the project origin for `SUPABASE_URL`, not its `/rest/v1/` endpoint. See
+`.env.example` for token budgets, thinking controls, throttling, timeouts,
 cache TTLs, message limits and the optional administrator token.
 
 ## Usage monitoring
@@ -146,5 +207,6 @@ variables from `.env.example` for Production and Preview. No custom output
 directory or build command is required.
 
 Before public launch, add durable shared storage, authentication for private
-operations, distributed rate limiting, bot verification and a persistent usage
-pipeline.
+operations, distributed rate limiting and bot verification. Configure the same
+server-only Supabase and Gemini variables in Vercel; never expose the Supabase
+secret through a `NEXT_PUBLIC_` variable.

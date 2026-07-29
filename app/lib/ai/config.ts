@@ -48,7 +48,8 @@ export function loadAIConfig() {
     apiKey,
     routineModel,
     complexModel,
-    embeddingModel: process.env.GEMINI_EMBEDDING_MODEL?.trim() || undefined,
+    embeddingModel:
+      process.env.GEMINI_EMBEDDING_MODEL?.trim() || "gemini-embedding-001",
     routineMaxOutputTokens: numberFromEnvironment(
       "GEMINI_ROUTINE_MAX_OUTPUT_TOKENS",
       400,

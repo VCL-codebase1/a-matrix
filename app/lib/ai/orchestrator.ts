@@ -45,6 +45,7 @@ import type {
   AMatrixChatRequest,
   AINextAction,
   AMatrixAIResponse,
+  CompactKnowledgeChunk,
   ConversationState,
 } from "./types";
 import {
@@ -65,6 +66,7 @@ export type ChatOutcome = {
 
 export type OrchestratorDependencies = {
   searchCatalog: (message: string) => Promise<CatalogSearchResult>;
+  searchKnowledge?: (message: string) => Promise<CompactKnowledgeChunk[]>;
   generate?: AIResponseGenerator;
 };
 
@@ -233,6 +235,12 @@ export async function orchestrateChat(
     throw new AIError("UNKNOWN_AI_ERROR", "Unsupported request route.");
   }
   const aiRoute: "routine_ai" | "complex_ai" = decision.route;
+  const knowledge = dependencies.searchKnowledge
+    ? await dependencies.searchKnowledge(request.message).catch((error) => {
+        console.error("A-Matrix vector retrieval failed", error);
+        return [];
+      })
+    : [];
 
   const sanitizedCurrent = sanitizeForModel(request.message);
   const sanitizedHistory = sanitizeMessagesForModel(
@@ -249,6 +257,7 @@ export async function orchestrateChat(
       conversationState: state,
       recentMessages: sanitizedHistory.messages,
       retrievedProducts: compactProducts,
+      retrievedKnowledge: knowledge,
       workflowContext: workflowForIntent(decision.intent),
       currentMessage: sanitizedCurrent.text,
     },
@@ -291,7 +300,7 @@ export async function orchestrateChat(
       cachedTokens: 0,
       totalTokens: 0,
       selectedProductCount: context.includedProductIds.length,
-      selectedDocumentChunkCount: 0,
+      selectedDocumentChunkCount: context.includedDocumentChunkIds.length,
       historyMessageCount: 0,
       latencyMs: 0,
       retryCount: 0,
@@ -370,7 +379,7 @@ export async function orchestrateChat(
         cachedTokens: 0,
         totalTokens: context.estimatedInputTokens,
         selectedProductCount: context.includedProductIds.length,
-        selectedDocumentChunkCount: 0,
+        selectedDocumentChunkCount: context.includedDocumentChunkIds.length,
         historyMessageCount: sanitizedHistory.messages.length,
         latencyMs: Date.now() - startedAt,
         retryCount: 0,
@@ -421,7 +430,7 @@ function recordGenerationUsage(input: {
     cachedTokens: input.generated.usage.cachedTokens,
     totalTokens: input.generated.usage.totalTokens,
     selectedProductCount: input.context.includedProductIds.length,
-    selectedDocumentChunkCount: 0,
+    selectedDocumentChunkCount: input.context.includedDocumentChunkIds.length,
     historyMessageCount: input.request.recentMessages?.length ?? 0,
     latencyMs: input.generated.latencyMs,
     retryCount: input.generated.retryCount,

@@ -10,6 +10,7 @@ describe("chat response stream", () => {
   it("streams the answer before emitting product metadata", async () => {
     const answer =
       "I found the matching bushing tap adapter kit in the catalogue.";
+    let persistenceFinished = false;
     const stream = createChatEventStream(
       {
         answer,
@@ -19,7 +20,13 @@ describe("chat response stream", () => {
         conversationState: { version: 1 },
         route: "routine_ai",
       },
-      { intervalMs: 0, productRevealDelayMs: 0 },
+      {
+        intervalMs: 0,
+        productRevealDelayMs: 0,
+        beforeComplete: async () => {
+          persistenceFinished = true;
+        },
+      },
     );
     const reader = stream.getReader();
     const decoder = new TextDecoder();
@@ -49,5 +56,6 @@ describe("chat response stream", () => {
     expect(
       events.slice(0, -1).every((event) => event.type === "answer_delta"),
     ).toBe(true);
+    expect(persistenceFinished).toBe(true);
   });
 });

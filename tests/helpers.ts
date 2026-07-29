@@ -9,7 +9,7 @@ export function testConfig(overrides: Partial<AIConfig> = {}): AIConfig {
     apiKey: "test-key",
     routineModel: "routine-model",
     complexModel: "complex-model",
-    embeddingModel: undefined,
+    embeddingModel: "embedding-model",
     routineMaxOutputTokens: 400,
     complexMaxOutputTokens: 900,
     routineTargetInputTokens: 3000,
