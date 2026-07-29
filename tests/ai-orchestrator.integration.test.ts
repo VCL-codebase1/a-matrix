@@ -129,6 +129,7 @@ describe("zero-model workflows", () => {
 describe("single-call model workflows", () => {
   it("uses one routine call for an ambiguous product search", async () => {
     const generate = mockGenerator();
+    const searchKnowledge = vi.fn(async () => []);
     const result = await orchestrateChat(
       {
         request: request(
@@ -143,11 +144,13 @@ describe("single-call model workflows", () => {
           products: [testProduct],
           retrievedAt: new Date().toISOString(),
         }),
+        searchKnowledge,
         generate,
       },
     );
     expect(result.route).toBe("routine_ai");
     expect(generate).toHaveBeenCalledTimes(1);
+    expect(searchKnowledge).not.toHaveBeenCalled();
   });
 
   it("uses one complex call for comparison and RFQ interpretation", async () => {

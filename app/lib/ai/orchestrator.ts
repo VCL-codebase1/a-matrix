@@ -192,23 +192,19 @@ export async function orchestrateChat(
     });
   }
 
-  let catalog: CatalogSearchResult = {
+  const emptyCatalog: CatalogSearchResult = {
     query: null,
     products: [],
     retrievedAt: null,
   };
-
-  if (
-    decision.route === "direct_database" ||
-    PRODUCT_INTENTS.has(decision.intent)
-  ) {
-    catalog = await dependencies.searchCatalog(request.message).catch((error) => {
+  const searchCatalog = () =>
+    dependencies.searchCatalog(request.message).catch((error) => {
       console.error("A-Matrix catalogue retrieval failed", error);
-      return { query: null, products: [], retrievedAt: null };
+      return emptyCatalog;
     });
-  }
 
   if (decision.route === "direct_database") {
+    const catalog = await searchCatalog();
     const exact = exactProductMatch(
       catalog.products,
       decision.exactIdentifiers,
@@ -235,8 +231,15 @@ export async function orchestrateChat(
     throw new AIError("UNKNOWN_AI_ERROR", "Unsupported request route.");
   }
   const aiRoute: "routine_ai" | "complex_ai" = decision.route;
-  const knowledge = dependencies.searchKnowledge
-    ? await dependencies.searchKnowledge(request.message).catch((error) => {
+  const isProductIntent = PRODUCT_INTENTS.has(decision.intent);
+  const catalog = isProductIntent
+    ? await searchCatalog()
+    : emptyCatalog;
+  const shouldSearchKnowledge =
+    Boolean(dependencies.searchKnowledge) &&
+    (!isProductIntent || catalog.products.length === 0);
+  const knowledge = shouldSearchKnowledge
+    ? await dependencies.searchKnowledge!(request.message).catch((error) => {
         console.error("A-Matrix vector retrieval failed", error);
         return [];
       })

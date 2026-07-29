@@ -45,10 +45,10 @@ The following are handled without generation:
 
 ## Catalogue retrieval and sync
 
-The primary catalogue is the private Supabase database. The chat searches
-normalized product names, manufacturers, models, SKUs, descriptions and
-specification values before using the public-site lookup as a temporary
-fallback. No more than five compact records are sent to generation.
+The private Supabase database is the only catalogue source used during a chat
+request. The chat searches normalized product names, manufacturers, models,
+SKUs, descriptions and specification values. It never waits on either public
+website. No more than five compact records are sent to generation.
 
 `npm run catalog:sync` crawls both authoritative public sources:
 
@@ -146,8 +146,8 @@ Copy `.env.example` to `.env.local` and provide:
 
 ```env
 GEMINI_API_KEY=your_server_key
-GEMINI_ROUTINE_MODEL=your_current_flash_lite_class_model
-GEMINI_COMPLEX_MODEL=your_current_flash_class_model
+GEMINI_ROUTINE_MODEL=gemini-3.1-flash-lite
+GEMINI_COMPLEX_MODEL=gemini-3.1-flash-lite
 GEMINI_EMBEDDING_MODEL=gemini-embedding-001
 SUPABASE_URL=https://your-project.supabase.co
 SUPABASE_SECRET_KEY=your_server_only_secret

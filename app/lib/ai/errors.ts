@@ -27,7 +27,7 @@ const CUSTOMER_ERRORS: Record<AIErrorCode, string> = {
   TOKEN_BUDGET_EXCEEDED:
     "That request contains more information than we can review safely at once. Please send the most important product, model or specification details first.",
   MODEL_TIMEOUT:
-    "We could not complete the product search in time. Please retry or provide the exact model or part number.",
+    "The response took longer than expected. Please try again in a moment.",
   INVALID_MODEL_RESPONSE:
     "We could not verify that product information reliably. Please provide the manufacturer or model number, or allow our sales team to review the request.",
   CONTENT_REJECTED:

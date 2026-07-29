@@ -16,7 +16,10 @@ import {
   updateConversationState,
 } from "../app/lib/ai/conversation-state";
 import { normalizeSupabaseProjectUrl } from "../app/lib/db/config";
-import { AIError } from "../app/lib/ai/errors";
+import {
+  AIError,
+  customerMessageForError,
+} from "../app/lib/ai/errors";
 import { serializeProductForAI } from "../app/lib/ai/product-serializer";
 import {
   parseAIResponse,
@@ -263,6 +266,36 @@ describe("product and response serialization", () => {
     } finally {
       globalThis.fetch = previousFetch;
     }
+  });
+
+  it("never crawls public websites during an unmatched chat search", async () => {
+    const previousFetch = globalThis.fetch;
+    let fetchCalls = 0;
+    globalThis.fetch = (async () => {
+      fetchCalls += 1;
+      throw new Error("chat catalogue lookup must remain database-only");
+    }) as typeof fetch;
+
+    try {
+      const result = await searchPublishedCatalog(
+        "a deliberately unmatched product phrase xqz-99117",
+      );
+      expect(result.products).toEqual([]);
+      expect(result.retrievedAt).toBeNull();
+      expect(fetchCalls).toBe(0);
+    } finally {
+      globalThis.fetch = previousFetch;
+    }
+  });
+
+  it("does not mislabel model timeouts as product-search failures", () => {
+    expect(
+      customerMessageForError(
+        new AIError("MODEL_TIMEOUT", "request aborted"),
+      ),
+    ).toBe(
+      "The response took longer than expected. Please try again in a moment.",
+    );
   });
 
   it("rejects product links outside assetmatrixenergy.com", () => {

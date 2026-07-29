@@ -1,18 +1,10 @@
 import "server-only";
 
-import {
-  extractExactIdentifiers,
-  identifierVariants,
-  identifiersEqual,
-} from "./ai/identifiers";
+import { extractExactIdentifiers } from "./ai/identifiers";
 import { searchVerifiedCatalogueSnapshot } from "./catalog-snapshot";
 import { searchDatabaseCatalog } from "./db/catalog";
 
-const CATALOG_ORIGIN = "https://assetmatrixenergy.com";
-const PRODUCTS_ENDPOINT = `${CATALOG_ORIGIN}/wp-json/wp/v2/amel-products`;
-const PAGES_ENDPOINT = `${CATALOG_ORIGIN}/wp-json/wp/v2/pages`;
 const MAX_RESULTS = 4;
-const MAX_SEARCH_REQUESTS = 2;
 
 const STOP_WORDS = new Set([
   "a",
@@ -191,8 +183,6 @@ function safeCatalogUrl(value?: string): string | null {
 
 function extractSearchQueries(prompt: string): {
   displayQuery: string | null;
-  queries: string[];
-  tokens: string[];
   exactIdentifier: string | null;
 } {
   const quoted = prompt.match(/[“"]([^”"]{2,100})[”"]/u)?.[1]?.trim();
@@ -217,79 +207,11 @@ function extractSearchQueries(prompt: string): {
     .slice(0, 12);
 
   const compact = tokens.join(" ").slice(0, 120).trim();
-  const queries = [
-    ...(exactIdentifier ? identifierVariants(exactIdentifier) : []),
-    quoted,
-    compact,
-  ]
-    .filter((value): value is string => Boolean(value?.trim()))
-    .map((value) => value.trim())
-    .filter(
-      (value, index, values) =>
-        values.findIndex(
-          (candidate) => candidate.toLowerCase() === value.toLowerCase(),
-        ) === index,
-    )
-    .slice(0, MAX_SEARCH_REQUESTS);
 
   return {
     displayQuery: exactIdentifier ?? quoted ?? compact ?? null,
-    queries,
-    tokens,
     exactIdentifier,
   };
-}
-
-async function fetchProducts(
-  query: string,
-): Promise<AssetMatrixWordPressProduct[]> {
-  const url = new URL(PRODUCTS_ENDPOINT);
-  url.searchParams.set("search", query);
-  url.searchParams.set("per_page", "8");
-  url.searchParams.set("status", "publish");
-  url.searchParams.set("_embed", "1");
-
-  const response = await fetch(url, {
-    headers: {
-      Accept: "application/json",
-      "User-Agent": "A-Matrix-Support/2.0",
-    },
-    next: { revalidate: 300 },
-    signal: AbortSignal.timeout(10_000),
-  });
-
-  if (!response.ok) {
-    throw new Error(`Catalogue request failed with ${response.status}`);
-  }
-
-  const data: unknown = await response.json();
-  return Array.isArray(data) ? (data as AssetMatrixWordPressProduct[]) : [];
-}
-
-async function fetchPages(
-  query: string,
-): Promise<AssetMatrixWordPressPage[]> {
-  const url = new URL(PAGES_ENDPOINT);
-  url.searchParams.set("search", query);
-  url.searchParams.set("per_page", "5");
-  url.searchParams.set("status", "publish");
-  url.searchParams.set("_embed", "1");
-
-  const response = await fetch(url, {
-    headers: {
-      Accept: "application/json",
-      "User-Agent": "A-Matrix-Support/2.0",
-    },
-    next: { revalidate: 300 },
-    signal: AbortSignal.timeout(10_000),
-  });
-
-  if (!response.ok) {
-    throw new Error(`Catalogue page request failed with ${response.status}`);
-  }
-
-  const data: unknown = await response.json();
-  return Array.isArray(data) ? (data as AssetMatrixWordPressPage[]) : [];
 }
 
 export function normalizeAssetMatrixProduct(
@@ -444,43 +366,12 @@ export function extractProductsFromWordPressPage(
     });
 }
 
-function scoreProduct(
-  product: CatalogProduct,
-  tokens: string[],
-  displayQuery: string | null,
-  exactIdentifier: string | null,
-): number {
-  const name = product.name.toLowerCase();
-  const categories = product.categories.join(" ").toLowerCase();
-  const summary = product.summary.toLowerCase();
-  let score = 0;
-
-  if (displayQuery && name.includes(displayQuery.toLowerCase())) score += 80;
-  if (
-    exactIdentifier &&
-    identifiersEqual(product.name, exactIdentifier)
-  ) {
-    score += 1000;
-  }
-
-  for (const token of tokens) {
-    if (name.includes(token)) score += 16;
-    if (categories.includes(token)) score += 6;
-    if (summary.includes(token)) score += 2;
-  }
-
-  if (product.summary) score += 2;
-  if (product.categories.length) score += 2;
-  return score;
-}
-
 export async function searchPublishedCatalog(
   prompt: string,
 ): Promise<CatalogSearchResult> {
-  const { displayQuery, queries, tokens, exactIdentifier } =
-    extractSearchQueries(prompt);
+  const { displayQuery, exactIdentifier } = extractSearchQueries(prompt);
 
-  if (!displayQuery || queries.length === 0) {
+  if (!displayQuery) {
     return {
       query: null,
       products: [],
@@ -509,54 +400,10 @@ export async function searchPublishedCatalog(
     };
   }
 
-  const productsById = new Map<number, CatalogProduct>();
-  let successfulRequest = false;
-
-  for (const query of queries) {
-    try {
-      const pages = await fetchPages(query);
-      successfulRequest = true;
-      for (const page of pages) {
-        for (const product of extractProductsFromWordPressPage(
-          page,
-          query,
-          tokens,
-        )) {
-          productsById.set(product.id, product);
-        }
-      }
-    } catch {
-      // The custom-product collection can still succeed when page search fails.
-    }
-
-    if (productsById.size >= MAX_RESULTS) break;
-
-    try {
-      const rawProducts = await fetchProducts(query);
-      successfulRequest = true;
-      for (const rawProduct of rawProducts) {
-        const product = normalizeAssetMatrixProduct(rawProduct);
-        if (product) productsById.set(product.id, product);
-      }
-    } catch {
-      // A second normalized query may still succeed if this one is rejected.
-    }
-
-    if (productsById.size >= MAX_RESULTS) break;
-  }
-
-  const products = [...productsById.values()]
-    .sort(
-      (left, right) =>
-        scoreProduct(right, tokens, displayQuery, exactIdentifier) -
-        scoreProduct(left, tokens, displayQuery, exactIdentifier),
-    )
-    .slice(0, MAX_RESULTS);
-
   return {
     query: displayQuery,
-    products,
-    retrievedAt: successfulRequest ? new Date().toISOString() : null,
+    products: [],
+    retrievedAt: null,
     exactIdentifier,
   };
 }
