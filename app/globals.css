@@ -369,10 +369,27 @@ a {
   color: var(--accent-dark);
 }
 
+.message.assistant.pending {
+  min-height: 72px;
+}
+
+.message.assistant.pending .message-copy::after {
+  width: 2px;
+  height: 1.05em;
+  margin-left: 4px;
+  display: inline-block;
+  border-radius: 999px;
+  background: var(--accent);
+  content: "";
+  vertical-align: -0.14em;
+  animation: stream-caret 800ms ease-in-out infinite;
+}
+
 .catalog-results {
   margin-top: 28px;
   padding-top: 22px;
   border-top: 1px solid var(--line);
+  animation: product-reveal 420ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
 .catalog-results-heading {
@@ -666,6 +683,24 @@ a {
 
   50% {
     opacity: 1;
+  }
+}
+
+@keyframes stream-caret {
+  0%,
+  100% {
+    opacity: 0.24;
+  }
+
+  50% {
+    opacity: 1;
+  }
+}
+
+@keyframes product-reveal {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
   }
 }
 

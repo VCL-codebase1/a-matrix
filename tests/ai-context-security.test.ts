@@ -199,7 +199,7 @@ describe("product and response serialization", () => {
       "https://assetmatrixenergy.com/power-factor-tan-delta-test-set/",
     );
     expect(products[0].image?.url).toBe(
-      "https://assetmatrixenergy.com/wp-content/uploads/2025/08/Kit_Bushings.jpg",
+      "/products/bushing-tap-adapter-kit.jpg",
     );
   });
 

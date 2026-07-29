@@ -19,7 +19,7 @@ describe("chat response stream", () => {
         conversationState: { version: 1 },
         route: "routine_ai",
       },
-      { intervalMs: 0 },
+      { intervalMs: 0, productRevealDelayMs: 0 },
     );
     const reader = stream.getReader();
     const decoder = new TextDecoder();

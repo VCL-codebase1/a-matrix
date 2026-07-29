@@ -66,22 +66,37 @@ const STARTERS = [
   },
 ];
 
+function ProductImage({ product }: { product: ProductMatch }) {
+  const [failed, setFailed] = useState(false);
+
+  if (!product.image || failed) {
+    return <span>Image unavailable</span>;
+  }
+
+  return (
+    <Image
+      alt={product.image.alt}
+      height={180}
+      onError={() => setFailed(true)}
+      src={product.image.url}
+      unoptimized
+      width={180}
+    />
+  );
+}
+
 export default function Home() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [prompt, setPrompt] = useState("");
   const [isThinking, setIsThinking] = useState(false);
   const [error, setError] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const threadEndRef = useRef<HTMLDivElement>(null);
+  const activeAssistantRef = useRef<HTMLElement>(null);
   const sessionIdRef = useRef<string | null>(null);
   const conversationStateRef = useRef<ConversationState>({
     version: 0,
   });
   const activeRequestRef = useRef<AbortController | null>(null);
-
-  useEffect(() => {
-    threadEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, isThinking]);
 
   useEffect(() => {
     const textarea = textareaRef.current;
@@ -108,6 +123,12 @@ export default function Home() {
     setPrompt("");
     setError("");
     setIsThinking(true);
+    window.requestAnimationFrame(() => {
+      activeAssistantRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+    });
     const controller = new AbortController();
     activeRequestRef.current = controller;
 
@@ -338,8 +359,14 @@ export default function Home() {
           <div className="thread">
             {messages.map((message, messageIndex) => (
               <article
-                className={`message ${message.role}`}
+                className={`message ${message.role}${message.pending ? " pending" : ""}`}
                 key={`${message.role}-${messageIndex}`}
+                ref={
+                  message.role === "assistant" && message.pending
+                    ? activeAssistantRef
+                    : undefined
+                }
+                aria-busy={message.pending || undefined}
               >
                 <p className="speaker">
                   {message.role === "assistant" ? "A-Matrix" : "You"}
@@ -379,17 +406,7 @@ export default function Home() {
                         {message.products.map((product) => (
                           <article className="product-card" key={product.id}>
                             <div className="product-image">
-                              {product.image ? (
-                                <Image
-                                  alt={product.image.alt}
-                                  height={180}
-                                  src={product.image.url}
-                                  unoptimized
-                                  width={180}
-                                />
-                              ) : (
-                                <span>Image unavailable</span>
-                              )}
+                              <ProductImage product={product} />
                             </div>
                             <div className="product-content">
                               {product.categories.length > 0 && (
@@ -435,8 +452,6 @@ export default function Home() {
                   )}
               </article>
             ))}
-
-            <div ref={threadEndRef} />
           </div>
         )}
       </section>

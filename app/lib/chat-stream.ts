@@ -17,8 +17,8 @@ function answerChunks(answer: string): string[] {
   const words = answer.match(/\S+\s*/g) ?? [answer];
   const chunks: string[] = [];
 
-  for (let index = 0; index < words.length; index += 3) {
-    chunks.push(words.slice(index, index + 3).join(""));
+  for (let index = 0; index < words.length; index += 2) {
+    chunks.push(words.slice(index, index + 2).join(""));
   }
 
   return chunks;
@@ -33,9 +33,11 @@ export function createChatEventStream(
   options: {
     signal?: AbortSignal;
     intervalMs?: number;
+    productRevealDelayMs?: number;
   } = {},
 ): ReadableStream<Uint8Array> {
-  const intervalMs = options.intervalMs ?? 14;
+  const intervalMs = options.intervalMs ?? 30;
+  const productRevealDelayMs = options.productRevealDelayMs ?? 180;
 
   return new ReadableStream<Uint8Array>({
     start(controller) {
@@ -56,6 +58,11 @@ export function createChatEventStream(
           }
 
           if (!options.signal?.aborted) {
+            if (productRevealDelayMs > 0 && outcome.products.length > 0) {
+              await new Promise((resolve) =>
+                setTimeout(resolve, productRevealDelayMs),
+              );
+            }
             controller.enqueue(
               encodeEvent({
                 type: "complete",

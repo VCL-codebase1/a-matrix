@@ -26,7 +26,7 @@ const VERIFIED_CATALOGUE: VerifiedCatalogueEntry[] = [
       listedPrice: "Quotation required",
       availability: "Availability requires confirmation",
       image: {
-        url: "https://assetmatrixenergy.com/wp-content/uploads/2025/08/Kit_Bushings.jpg",
+        url: "/products/bushing-tap-adapter-kit.jpg",
         alt: "Bushing Tap Adapter Kit",
       },
       categories: [
