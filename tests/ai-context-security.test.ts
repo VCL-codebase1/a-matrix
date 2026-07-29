@@ -4,6 +4,7 @@ import {
   buildAIContext,
   estimateTokens,
 } from "../app/lib/ai/context-builder";
+import { thinkingConfigForLevel } from "../app/lib/ai/client";
 import {
   normalizeConversationState,
   updateConversationState,
@@ -28,6 +29,17 @@ describe("sensitive-data sanitization", () => {
     expect(result.text).not.toContain("secret123");
     expect(result.text).not.toContain("AIza");
     expect(result.containsSensitiveData).toBe(true);
+  });
+});
+
+describe("generation configuration", () => {
+  it("uses supported thinking levels without a numeric thinking budget", () => {
+    const routine = thinkingConfigForLevel("minimal");
+    const complex = thinkingConfigForLevel("medium");
+
+    expect(routine.thinkingLevel).toBe("MINIMAL");
+    expect(complex.thinkingLevel).toBe("MEDIUM");
+    expect(routine).not.toHaveProperty("thinkingBudget");
   });
 });
 

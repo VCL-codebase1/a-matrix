@@ -1,6 +1,6 @@
 import "server-only";
 
-import { GoogleGenAI } from "@google/genai";
+import { GoogleGenAI, ThinkingLevel } from "@google/genai";
 
 import type { AIConfig } from "./config";
 import { AIError, toAIError } from "./errors";
@@ -54,6 +54,22 @@ export type GenerateStructuredResponseResult = {
 export type AIResponseGenerator = (
   input: GenerateStructuredResponseInput,
 ) => Promise<GenerateStructuredResponseResult>;
+
+const THINKING_LEVEL_MAP = {
+  minimal: ThinkingLevel.MINIMAL,
+  low: ThinkingLevel.LOW,
+  medium: ThinkingLevel.MEDIUM,
+  high: ThinkingLevel.HIGH,
+} as const;
+
+export function thinkingConfigForLevel(
+  level: keyof typeof THINKING_LEVEL_MAP,
+) {
+  return {
+    includeThoughts: false,
+    thinkingLevel: THINKING_LEVEL_MAP[level],
+  };
+}
 
 function assertCircuitAvailable(): void {
   if (circuit.openUntil > Date.now()) {
@@ -117,10 +133,10 @@ export const generateStructuredResponse: AIResponseGenerator = async (input) => 
     input.route === "complex_ai"
       ? input.config.complexMaxOutputTokens
       : input.config.routineMaxOutputTokens;
-  const thinkingBudget =
+  const thinkingLevel =
     input.route === "complex_ai"
-      ? input.config.complexThinkingBudget
-      : input.config.routineThinkingBudget;
+      ? input.config.complexThinkingLevel
+      : input.config.routineThinkingLevel;
 
   const client = new GoogleGenAI({ apiKey: input.config.apiKey });
   const startedAt = Date.now();
@@ -147,10 +163,7 @@ export const generateStructuredResponse: AIResponseGenerator = async (input) => 
             maxOutputTokens,
             responseMimeType: "application/json",
             responseJsonSchema: aMatrixResponseJsonSchema,
-            thinkingConfig: {
-              includeThoughts: false,
-              thinkingBudget,
-            },
+            thinkingConfig: thinkingConfigForLevel(thinkingLevel),
             abortSignal: controller.signal,
             httpOptions: { timeout: input.config.requestTimeoutMs },
           },

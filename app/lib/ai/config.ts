@@ -14,6 +14,19 @@ function numberFromEnvironment(
     : fallback;
 }
 
+const THINKING_LEVELS = ["minimal", "low", "medium", "high"] as const;
+export type AIThinkingLevel = (typeof THINKING_LEVELS)[number];
+
+function thinkingLevelFromEnvironment(
+  name: string,
+  fallback: AIThinkingLevel,
+): AIThinkingLevel {
+  const value = process.env[name]?.trim().toLowerCase();
+  return THINKING_LEVELS.includes(value as AIThinkingLevel)
+    ? (value as AIThinkingLevel)
+    : fallback;
+}
+
 export type AIConfig = ReturnType<typeof loadAIConfig>;
 
 export function loadAIConfig() {
@@ -72,17 +85,13 @@ export function loadAIConfig() {
       2000,
       20000,
     ),
-    routineThinkingBudget: numberFromEnvironment(
-      "GEMINI_ROUTINE_THINKING_BUDGET",
-      0,
-      0,
-      1024,
+    routineThinkingLevel: thinkingLevelFromEnvironment(
+      "GEMINI_ROUTINE_THINKING_LEVEL",
+      "minimal",
     ),
-    complexThinkingBudget: numberFromEnvironment(
-      "GEMINI_COMPLEX_THINKING_BUDGET",
-      512,
-      0,
-      4096,
+    complexThinkingLevel: thinkingLevelFromEnvironment(
+      "GEMINI_COMPLEX_THINKING_LEVEL",
+      "medium",
     ),
     requestTimeoutMs: numberFromEnvironment(
       "AI_REQUEST_TIMEOUT_MS",
