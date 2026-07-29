@@ -9,10 +9,28 @@ built with Next.js App Router and the Google Gen AI SDK.
 - Prepares quotation and custom-sourcing details.
 - Guides replacement-product and compatibility conversations.
 - Handles order and technical-support enquiries without inventing live data.
+- Searches the public A-Matrix WooCommerce catalogue without using model tokens.
+- Renders verified catalogue matches directly inside the conversation.
 - Keeps the Gemini API key on the server.
 
-This version has no database and is not connected to live catalogue, inventory,
-quotation, or order-management systems.
+This version has no database. It can read published product data from the
+A-Matrix website, but it is not connected to authenticated inventory,
+quotation, customer, or order-management systems.
+
+## Catalogue search
+
+For each customer message, the server:
+
+1. Removes common conversational words and sensitive patterns.
+2. Builds up to three deterministic product-search queries.
+3. Searches the public WooCommerce Store API.
+4. Deduplicates and ranks the results without AI.
+5. Sends only four compact product records to Gemini for explanation.
+6. Renders the verified records as product cards independently of Gemini.
+
+Published catalogue searches are cached for five minutes. Website prices and
+availability are shown with a confirmation notice because they are not binding
+quotations or warehouse commitments.
 
 ## Local development
 

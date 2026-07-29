@@ -1,5 +1,9 @@
 import { GoogleGenAI, type Content } from "@google/genai";
 import { NextRequest, NextResponse } from "next/server";
+import {
+  searchPublishedCatalog,
+  type CatalogProduct,
+} from "../../lib/catalog";
 import { A_MATRIX_PERSONALITY } from "../../lib/personality";
 
 export const runtime = "nodejs";
@@ -20,6 +24,30 @@ function isValidMessage(value: unknown): value is IncomingMessage {
     typeof message.content === "string" &&
     message.content.trim().length > 0
   );
+}
+
+function buildCatalogContext(
+  products: CatalogProduct[],
+  query: string | null,
+  retrievedAt: string | null,
+): string {
+  return [
+    "VERIFIED A-MATRIX ONLINE CATALOGUE RESULTS",
+    `Search query: ${query ?? "Not available"}`,
+    `Retrieved: ${retrievedAt ?? "Not available"}`,
+    "Use only the fields below as verified website catalogue data. The listed price is not a final quotation, and website availability still requires commercial confirmation.",
+    JSON.stringify(
+      products.map((product) => ({
+        name: product.name,
+        sku: product.sku,
+        summary: product.summary,
+        listedPrice: product.listedPrice,
+        availability: product.availability,
+        categories: product.categories,
+        url: product.url,
+      })),
+    ),
+  ].join("\n");
 }
 
 export async function POST(request: NextRequest) {
@@ -58,10 +86,26 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const latestPrompt = messages[messages.length - 1].content;
+    const catalog = await searchPublishedCatalog(latestPrompt).catch((error) => {
+      console.error("A-Matrix catalogue search error", error);
+      return { query: null, products: [], retrievedAt: null };
+    });
+
     const contents: Content[] = messages.map((message) => ({
       role: message.role === "assistant" ? "model" : "user",
       parts: [{ text: message.content }],
     }));
+
+    if (catalog.products.length > 0) {
+      contents[contents.length - 1].parts?.push({
+        text: buildCatalogContext(
+          catalog.products,
+          catalog.query,
+          catalog.retrievedAt,
+        ),
+      });
+    }
 
     const ai = new GoogleGenAI({ apiKey });
     const response = await ai.models.generateContent({
@@ -81,7 +125,12 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    return NextResponse.json({ answer });
+    return NextResponse.json({
+      answer,
+      products: catalog.products,
+      catalogQuery: catalog.query,
+      catalogRetrievedAt: catalog.retrievedAt,
+    });
   } catch (error) {
     console.error("a-matrix chat error", error);
     return NextResponse.json(

@@ -1,55 +1,56 @@
 "use client";
 
 import { FormEvent, KeyboardEvent, useEffect, useRef, useState } from "react";
+import Image from "next/image";
 import Link from "next/link";
+
+type ProductMatch = {
+  id: number;
+  name: string;
+  url: string;
+  sku: string | null;
+  summary: string;
+  listedPrice: string;
+  availability: string;
+  image: {
+    url: string;
+    alt: string;
+  } | null;
+  categories: string[];
+};
 
 type ChatMessage = {
   role: "user" | "assistant";
   content: string;
+  products?: ProductMatch[];
 };
 
 const STARTERS = [
   {
-    number: "01",
     label: "Find a product",
-    detail: "Identify the right model, part or specification.",
+    detail: "Search by name, model, part number or specification.",
     prompt:
       "I need help identifying a technical product. Please ask me for the most important details.",
   },
   {
-    number: "02",
-    label: "Request a quotation",
-    detail: "Prepare the details our sales team will need.",
+    label: "Get a quote",
+    detail: "Share the product, quantity and delivery details.",
     prompt:
       "I would like to request a quotation. Help me organize the product, quantity and delivery details.",
   },
   {
-    number: "03",
-    label: "Source an alternative",
-    detail: "Match a replacement or an unlisted item.",
+    label: "Find a replacement",
+    detail: "Match an existing part with a suitable alternative.",
     prompt:
       "I need a replacement or alternative for an existing product. Help me identify the mandatory specifications.",
   },
   {
-    number: "04",
-    label: "Order or technical support",
-    detail: "Get help with an order, product or equipment issue.",
+    label: "Order & technical help",
+    detail: "Get support with an order, product or equipment issue.",
     prompt:
       "I need help with an existing order or a technical support issue. Please ask for the right reference and product details.",
   },
 ];
-
-const DOMAINS = [
-  "Laboratory",
-  "Chemicals & reagents",
-  "Instrumentation",
-  "Automation",
-  "Industrial supply",
-];
-
-function ArrowIcon() {
-  return <span aria-hidden="true">↑</span>;
-}
 
 export default function Home() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -100,6 +101,7 @@ export default function Home() {
       const data = (await response.json()) as {
         answer?: string;
         error?: string;
+        products?: ProductMatch[];
       };
 
       if (!response.ok || !data.answer) {
@@ -111,6 +113,7 @@ export default function Home() {
         {
           role: "assistant",
           content: data.answer!,
+          products: data.products ?? [],
         },
       ]);
     } catch (caught) {
@@ -151,9 +154,7 @@ export default function Home() {
           <span className="wordmark">
             a-matrix<span>.</span>
           </span>
-          <span className="brand-descriptor">
-            Technical product supply
-          </span>
+          <span className="brand-descriptor">Product support</span>
         </Link>
 
         <div className="header-actions">
@@ -163,16 +164,15 @@ export default function Home() {
               onClick={startNewEnquiry}
               type="button"
             >
-              New enquiry
+              Start over
             </button>
           )}
-          <a className="header-email" href="mailto:sales@a-matrix.ng">
-            sales@a-matrix.ng
+          <a className="header-contact" href="tel:+2347069176001">
+            Call us
           </a>
-          <div className="availability" aria-label="A-Matrix support is online">
-            <span className="status-dot" />
-            support online
-          </div>
+          <a className="header-contact primary" href="mailto:sales@a-matrix.ng">
+            Email sales
+          </a>
         </div>
       </header>
 
@@ -182,71 +182,52 @@ export default function Home() {
       >
         {messages.length === 0 ? (
           <div className="empty-state">
-            <p className="eyebrow">Product · Procurement · Support</p>
-            <h1>
-              What can we help
-              <br />
-              you source<span>?</span>
-            </h1>
+            <p className="eyebrow">A-Matrix customer support</p>
+            <h1>Hi, how can we help today?</h1>
             <p className="intro">
-              Find technical products, clarify specifications, prepare a
-              quotation request, or get support with an existing order.
+              Tell us what you’re looking for. A product name, model or part
+              number is a great place to start.
             </p>
 
             <div className="starters" aria-label="Support options">
               {STARTERS.map((starter) => (
                 <button
                   className="starter"
-                  key={starter.number}
+                  key={starter.label}
                   onClick={() => void sendMessage(starter.prompt)}
                   type="button"
                 >
-                  <span className="starter-number">{starter.number}</span>
                   <span className="starter-copy">
                     <strong>{starter.label}</strong>
                     <small>{starter.detail}</small>
                   </span>
                   <span className="starter-arrow" aria-hidden="true">
-                    ↗
+                    →
                   </span>
                 </button>
               ))}
             </div>
 
-            <div className="domain-strip" aria-label="Product categories">
-              <span>We support</span>
-              <div>
-                {DOMAINS.map((domain) => (
-                  <span key={domain}>{domain}</span>
-                ))}
-              </div>
-            </div>
-
             <div className="contact-strip">
               <p>
-                Need a product specialist?
-                <span>Monday–Friday, 9:00–17:00 WAT</span>
+                Prefer to speak with someone?
+                <span>Our team is available Monday–Friday, 9:00–17:00 WAT.</span>
               </p>
               <div>
-                <a href="tel:+2347069176001">+234 706 917 6001</a>
+                <a href="tel:+2347069176001">Call +234 706 917 6001</a>
                 <a href="mailto:sales@a-matrix.ng">Email sales</a>
               </div>
             </div>
           </div>
         ) : (
           <div className="thread">
-            <div className="thread-heading">
-              <p>Customer support enquiry</p>
-              <span>Details stay in this conversation</span>
-            </div>
-
             {messages.map((message, messageIndex) => (
               <article
                 className={`message ${message.role}`}
                 key={`${message.role}-${messageIndex}`}
               >
                 <p className="speaker">
-                  {message.role === "assistant" ? "A-Matrix support" : "You"}
+                  {message.role === "assistant" ? "A-Matrix" : "You"}
                 </p>
                 <div className="message-copy">
                   {message.content.split("\n").map((line, index, lines) => (
@@ -256,16 +237,87 @@ export default function Home() {
                     </span>
                   ))}
                 </div>
+
+                {message.role === "assistant" &&
+                  message.products &&
+                  message.products.length > 0 && (
+                    <section
+                      className="catalog-results"
+                      aria-label="Products from the A-Matrix catalogue"
+                    >
+                      <div className="catalog-results-heading">
+                        <p>Products from our catalogue</p>
+                      </div>
+
+                      <div className="product-grid">
+                        {message.products.map((product) => (
+                          <article className="product-card" key={product.id}>
+                            <div className="product-image">
+                              {product.image ? (
+                                <Image
+                                  alt={product.image.alt}
+                                  height={180}
+                                  src={product.image.url}
+                                  unoptimized
+                                  width={180}
+                                />
+                              ) : (
+                                <span>Image unavailable</span>
+                              )}
+                            </div>
+                            <div className="product-content">
+                              {product.categories.length > 0 && (
+                                <p className="product-category">
+                                  {product.categories.join(" · ")}
+                                </p>
+                              )}
+                              <h2>{product.name}</h2>
+                              {product.sku && (
+                                <p className="product-sku">
+                                  SKU: {product.sku}
+                                </p>
+                              )}
+                              {product.summary && (
+                                <p className="product-summary">
+                                  {product.summary}
+                                </p>
+                              )}
+                              <div className="product-meta">
+                                <strong>{product.listedPrice}</strong>
+                                <span>{product.availability}</span>
+                              </div>
+                              <a
+                                className="product-link"
+                                href={product.url}
+                                target="_blank"
+                                rel="noreferrer"
+                              >
+                                View product
+                                <span aria-hidden="true">↗</span>
+                              </a>
+                            </div>
+                          </article>
+                        ))}
+                      </div>
+
+                      <p className="catalog-disclaimer">
+                        Website information is current at retrieval time.
+                        Availability, taxes, delivery, and final pricing require
+                        confirmation.
+                      </p>
+                    </section>
+                  )}
               </article>
             ))}
 
             {isThinking && (
               <article className="message assistant thinking">
-                <p className="speaker">A-Matrix support</p>
-                <div className="thinking-dots" aria-label="A-Matrix is thinking">
-                  <span />
-                  <span />
-                  <span />
+                <p className="speaker">A-Matrix</p>
+                <div
+                  className="thinking-status"
+                  aria-label="A-Matrix is preparing a response"
+                >
+                  Checking that for you…
                 </div>
               </article>
             )}
@@ -291,7 +343,7 @@ export default function Home() {
             maxLength={12000}
             onChange={(event) => setPrompt(event.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="Describe the product, part number, order or support issue…"
+            placeholder="What are you looking for? Add a product name, model or part number…"
             ref={textareaRef}
             rows={1}
             value={prompt}
@@ -302,13 +354,11 @@ export default function Home() {
             type="submit"
             aria-label="Send message"
           >
-            <ArrowIcon />
+            Send
           </button>
         </form>
         <p className="composer-note">
-          Do not share passwords or payment-card details
-          <span>·</span>
-          Enter to send
+          We’ll only use the details you share to help with this enquiry.
         </p>
       </div>
     </main>
