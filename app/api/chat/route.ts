@@ -1,141 +1,82 @@
-import { GoogleGenAI, type Content } from "@google/genai";
 import { NextRequest, NextResponse } from "next/server";
+
+import { loadAIConfig } from "../../lib/ai/config";
 import {
-  searchPublishedCatalog,
-  type CatalogProduct,
-} from "../../lib/catalog";
-import { A_MATRIX_PERSONALITY } from "../../lib/personality";
+  customerMessageForError,
+  statusForError,
+  toAIError,
+} from "../../lib/ai/errors";
+import { orchestrateChat } from "../../lib/ai/orchestrator";
+import { chatRequestSchema } from "../../lib/ai/request-schema";
+import { recordRateLimitEvent } from "../../lib/ai/usage";
+import { searchPublishedCatalog } from "../../lib/catalog";
 
 export const runtime = "nodejs";
+export const maxDuration = 60;
 
-type IncomingMessage = {
-  role: "user" | "assistant";
-  content: string;
-};
-
-const MAX_MESSAGES = 40;
-const MAX_TOTAL_CHARS = 80_000;
-
-function isValidMessage(value: unknown): value is IncomingMessage {
-  if (!value || typeof value !== "object") return false;
-  const message = value as Record<string, unknown>;
+function requestIp(request: NextRequest): string {
   return (
-    (message.role === "user" || message.role === "assistant") &&
-    typeof message.content === "string" &&
-    message.content.trim().length > 0
+    request.headers.get("x-vercel-forwarded-for") ??
+    request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ??
+    request.headers.get("x-real-ip") ??
+    "anonymous"
   );
-}
-
-function buildCatalogContext(
-  products: CatalogProduct[],
-  query: string | null,
-  retrievedAt: string | null,
-): string {
-  return [
-    "VERIFIED A-MATRIX ONLINE CATALOGUE RESULTS",
-    `Search query: ${query ?? "Not available"}`,
-    `Retrieved: ${retrievedAt ?? "Not available"}`,
-    "Use only the fields below as verified website catalogue data. The listed price is not a final quotation, and website availability still requires commercial confirmation.",
-    JSON.stringify(
-      products.map((product) => ({
-        name: product.name,
-        sku: product.sku,
-        summary: product.summary,
-        listedPrice: product.listedPrice,
-        availability: product.availability,
-        categories: product.categories,
-        url: product.url,
-      })),
-    ),
-  ].join("\n");
 }
 
 export async function POST(request: NextRequest) {
   try {
-    const apiKey = process.env.GEMINI_API_KEY;
-    const model = process.env.GEMINI_MODEL || "gemini-3.5-flash-lite";
-    if (!apiKey) {
+    if (!request.headers.get("content-type")?.includes("application/json")) {
       return NextResponse.json(
-        { error: "a-matrix isn’t connected yet. Please try again shortly." },
-        { status: 503 },
+        { error: "That request format could not be read." },
+        { status: 415 },
       );
     }
 
-    const body = (await request.json()) as { messages?: unknown };
-    if (!Array.isArray(body.messages) || !body.messages.every(isValidMessage)) {
+    const config = loadAIConfig();
+    const parsed = chatRequestSchema.safeParse(await request.json());
+    if (!parsed.success || parsed.data.website) {
       return NextResponse.json(
         { error: "That message could not be read." },
         { status: 400 },
       );
     }
-
-    const messages = body.messages.slice(-MAX_MESSAGES);
-    const totalChars = messages.reduce(
-      (sum, message) => sum + message.content.length,
-      0,
-    );
-
-    if (
-      messages.length === 0 ||
-      messages[messages.length - 1].role !== "user" ||
-      totalChars > MAX_TOTAL_CHARS
-    ) {
+    if (parsed.data.message.length > config.maxMessageCharacters) {
       return NextResponse.json(
-        { error: "This conversation is too large for one request." },
+        {
+          error:
+            "That message is too long to review safely at once. Please send the most important product or procurement details first.",
+        },
         { status: 400 },
       );
     }
 
-    const latestPrompt = messages[messages.length - 1].content;
-    const catalog = await searchPublishedCatalog(latestPrompt).catch((error) => {
-      console.error("A-Matrix catalogue search error", error);
-      return { query: null, products: [], retrievedAt: null };
-    });
-
-    const contents: Content[] = messages.map((message) => ({
-      role: message.role === "assistant" ? "model" : "user",
-      parts: [{ text: message.content }],
-    }));
-
-    if (catalog.products.length > 0) {
-      contents[contents.length - 1].parts?.push({
-        text: buildCatalogContext(
-          catalog.products,
-          catalog.query,
-          catalog.retrievedAt,
-        ),
-      });
-    }
-
-    const ai = new GoogleGenAI({ apiKey });
-    const response = await ai.models.generateContent({
-      model,
-      contents,
-      config: {
-        systemInstruction: A_MATRIX_PERSONALITY,
-        maxOutputTokens: 8192,
+    const outcome = await orchestrateChat(
+      {
+        request: parsed.data,
+        ip: requestIp(request),
+        config,
       },
-    });
-
-    const answer = response.text?.trim();
-    if (!answer) {
-      return NextResponse.json(
-        { error: "I couldn’t form a response. Try phrasing that another way." },
-        { status: 502 },
-      );
-    }
+      { searchCatalog: searchPublishedCatalog },
+    );
 
     return NextResponse.json({
-      answer,
-      products: catalog.products,
-      catalogQuery: catalog.query,
-      catalogRetrievedAt: catalog.retrievedAt,
+      answer: outcome.answer,
+      intent: outcome.intent,
+      nextAction: outcome.nextAction,
+      products: outcome.products,
+      conversationState: outcome.conversationState,
     });
   } catch (error) {
-    console.error("a-matrix chat error", error);
+    const aiError = toAIError(error);
+    if (aiError.code === "RATE_LIMITED") recordRateLimitEvent();
+    console.error("A-Matrix chat request failed", {
+      code: aiError.code,
+      detail: aiError.message,
+      cause: aiError.cause,
+    });
     return NextResponse.json(
-      { error: "Something interrupted the conversation. Please try again." },
-      { status: 500 },
+      { error: customerMessageForError(aiError) },
+      { status: statusForError(aiError) },
     );
   }
 }

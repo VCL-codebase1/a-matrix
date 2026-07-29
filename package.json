@@ -10,13 +10,15 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint .",
-    "test": "npm run lint && npm run build"
+    "test:unit": "vitest run",
+    "test": "npm run test:unit && npm run lint && npm run build"
   },
   "dependencies": {
     "@google/genai": "^2.13.0",
-    "next": "16.2.6",
+    "next": "^16.2.12",
     "react": "19.2.6",
-    "react-dom": "19.2.6"
+    "react-dom": "19.2.6",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "4.2.1",
@@ -24,9 +26,14 @@
     "@types/react": "19.2.14",
     "@types/react-dom": "19.2.3",
     "eslint": "9.39.4",
-    "eslint-config-next": "16.2.6",
+    "eslint-config-next": "^16.2.12",
     "tailwindcss": "4.2.1",
-    "typescript": "5.9.3"
+    "typescript": "5.9.3",
+    "vitest": "^4.1.10"
+  },
+  "overrides": {
+    "postcss": "8.5.24",
+    "sharp": "0.35.3"
   },
   "type": "module"
 }

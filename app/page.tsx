@@ -3,6 +3,8 @@
 import { FormEvent, KeyboardEvent, useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
+import { BUSINESS_DETAILS } from "./lib/business";
+import type { ConversationState } from "./lib/ai/types";
 
 type ProductMatch = {
   id: number;
@@ -59,6 +61,11 @@ export default function Home() {
   const [error, setError] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const threadEndRef = useRef<HTMLDivElement>(null);
+  const sessionIdRef = useRef<string | null>(null);
+  const conversationStateRef = useRef<ConversationState>({
+    version: 0,
+  });
+  const activeRequestRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     threadEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -73,7 +80,7 @@ export default function Home() {
 
   async function sendMessage(rawPrompt?: string) {
     const content = (rawPrompt ?? prompt).trim();
-    if (!content || isThinking) return;
+    if (!content || isThinking || activeRequestRef.current) return;
 
     const userMessage: ChatMessage = {
       role: "user",
@@ -85,23 +92,37 @@ export default function Home() {
     setPrompt("");
     setError("");
     setIsThinking(true);
+    const controller = new AbortController();
+    activeRequestRef.current = controller;
 
     try {
+      if (!sessionIdRef.current) {
+        const stored = window.sessionStorage.getItem("a-matrix-session-id");
+        sessionIdRef.current = stored || crypto.randomUUID();
+        window.sessionStorage.setItem(
+          "a-matrix-session-id",
+          sessionIdRef.current,
+        );
+      }
+
       const response = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          messages: nextMessages.map(({ role, content: text }) => ({
-            role,
-            content: text,
-          })),
+          sessionId: sessionIdRef.current,
+          requestId: crypto.randomUUID(),
+          message: content,
+          recentMessages: messages.slice(-4),
+          conversationState: conversationStateRef.current,
         }),
+        signal: controller.signal,
       });
 
       const data = (await response.json()) as {
         answer?: string;
         error?: string;
         products?: ProductMatch[];
+        conversationState?: ConversationState;
       };
 
       if (!response.ok || !data.answer) {
@@ -116,22 +137,35 @@ export default function Home() {
           products: data.products ?? [],
         },
       ]);
+      if (data.conversationState) {
+        conversationStateRef.current = data.conversationState;
+      }
     } catch (caught) {
+      if (caught instanceof DOMException && caught.name === "AbortError") return;
       setError(
         caught instanceof Error
           ? caught.message
           : "The conversation was interrupted. Please try again.",
       );
     } finally {
-      setIsThinking(false);
-      window.setTimeout(() => textareaRef.current?.focus(), 50);
+      if (activeRequestRef.current === controller) {
+        activeRequestRef.current = null;
+        setIsThinking(false);
+        window.setTimeout(() => textareaRef.current?.focus(), 50);
+      }
     }
   }
 
   function startNewEnquiry() {
+    activeRequestRef.current?.abort();
+    activeRequestRef.current = null;
+    sessionIdRef.current = null;
+    conversationStateRef.current = { version: 0 };
+    window.sessionStorage.removeItem("a-matrix-session-id");
     setMessages([]);
     setPrompt("");
     setError("");
+    setIsThinking(false);
     window.setTimeout(() => textareaRef.current?.focus(), 50);
   }
 
@@ -167,10 +201,16 @@ export default function Home() {
               Start over
             </button>
           )}
-          <a className="header-contact" href="tel:+2347069176001">
+          <a
+            className="header-contact"
+            href={`tel:${BUSINESS_DETAILS.telephonePrimary.replace(/\s/g, "")}`}
+          >
             Call us
           </a>
-          <a className="header-contact primary" href="mailto:sales@a-matrix.ng">
+          <a
+            className="header-contact primary"
+            href={`mailto:${BUSINESS_DETAILS.salesEmail}`}
+          >
             Email sales
           </a>
         </div>
@@ -182,7 +222,6 @@ export default function Home() {
       >
         {messages.length === 0 ? (
           <div className="empty-state">
-            <p className="eyebrow">A-Matrix customer support</p>
             <h1>Hi, how can we help today?</h1>
             <p className="intro">
               Tell us what you’re looking for. A product name, model or part
@@ -211,11 +250,17 @@ export default function Home() {
             <div className="contact-strip">
               <p>
                 Prefer to speak with someone?
-                <span>Our team is available Monday–Friday, 9:00–17:00 WAT.</span>
+                <span>{BUSINESS_DETAILS.hoursShort}</span>
               </p>
               <div>
-                <a href="tel:+2347069176001">Call +234 706 917 6001</a>
-                <a href="mailto:sales@a-matrix.ng">Email sales</a>
+                <a
+                  href={`tel:${BUSINESS_DETAILS.telephonePrimary.replace(/\s/g, "")}`}
+                >
+                  Call {BUSINESS_DETAILS.telephonePrimary}
+                </a>
+                <a href={`mailto:${BUSINESS_DETAILS.salesEmail}`}>
+                  Email sales
+                </a>
               </div>
             </div>
           </div>

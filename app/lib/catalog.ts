@@ -1,5 +1,11 @@
 import "server-only";
 
+import {
+  extractExactIdentifiers,
+  identifierVariants,
+  identifiersEqual,
+} from "./ai/identifiers";
+
 const CATALOG_ORIGIN = "https://a-matrix.ng";
 const PRODUCTS_ENDPOINT = `${CATALOG_ORIGIN}/wp-json/wc/store/v1/products`;
 const MAX_RESULTS = 4;
@@ -134,6 +140,7 @@ export type CatalogSearchResult = {
   query: string | null;
   products: CatalogProduct[];
   retrievedAt: string | null;
+  exactIdentifier?: string | null;
 };
 
 function decodeText(value: string): string {
@@ -217,9 +224,7 @@ function extractSearchQueries(prompt: string): {
   tokens: string[];
 } {
   const quoted = prompt.match(/[“"]([^”"]{2,100})[”"]/u)?.[1]?.trim();
-  const identifier = prompt.match(
-    /\b(?=[a-z0-9._/-]{4,}\b)(?=[a-z0-9._/-]*[a-z])(?=[a-z0-9._/-]*\d)[a-z0-9][a-z0-9._/-]*\b/i,
-  )?.[0];
+  const identifier = extractExactIdentifiers(prompt)[0];
 
   const sanitized = prompt
     .replace(/https?:\/\/\S+/gi, " ")
@@ -242,7 +247,7 @@ function extractSearchQueries(prompt: string): {
 
   const compact = tokens.join(" ").slice(0, 100).trim();
   const queries = [
-    identifier,
+    ...(identifier ? identifierVariants(identifier) : []),
     quoted,
     compact,
     tokens.slice(0, 3).join(" "),
@@ -350,7 +355,7 @@ function scoreProduct(
   let score = 0;
 
   if (displayQuery && name.includes(displayQuery.toLowerCase())) score += 50;
-  if (displayQuery && sku === displayQuery.toLowerCase()) score += 100;
+  if (displayQuery && sku && identifiersEqual(sku, displayQuery)) score += 1000;
 
   for (const token of tokens) {
     if (name.includes(token)) score += 12;
@@ -367,7 +372,12 @@ export async function searchPublishedCatalog(
   const { displayQuery, queries, tokens } = extractSearchQueries(prompt);
 
   if (!displayQuery || queries.length === 0) {
-    return { query: null, products: [], retrievedAt: null };
+    return {
+      query: null,
+      products: [],
+      retrievedAt: null,
+      exactIdentifier: null,
+    };
   }
 
   const responses = await Promise.allSettled(
@@ -399,5 +409,6 @@ export async function searchPublishedCatalog(
     query: displayQuery,
     products,
     retrievedAt: successfulRequest ? new Date().toISOString() : null,
+    exactIdentifier: extractExactIdentifiers(prompt)[0] ?? null,
   };
 }
