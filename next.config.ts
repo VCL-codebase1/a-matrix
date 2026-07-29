@@ -6,12 +6,12 @@ const nextConfig: NextConfig = {
     remotePatterns: [
       {
         protocol: "https",
-        hostname: "a-matrix.ng",
+        hostname: "assetmatrixenergy.com",
         pathname: "/**",
       },
       {
         protocol: "https",
-        hostname: "www.a-matrix.ng",
+        hostname: "www.assetmatrixenergy.com",
         pathname: "/**",
       },
     ],

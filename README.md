@@ -12,8 +12,8 @@ The main endpoint is `POST /api/chat`. Each request is handled in this order:
 1. Validate the request and reject bot honeypot submissions.
 2. Route obvious FAQs, private-record requests, exact identifiers and human
    escalation with deterministic rules.
-3. Search the public A-Matrix WooCommerce catalogue only for product-related
-   intents.
+3. Search the public Asset Matrix Energy WordPress product catalogue only for
+   product-related intents.
 4. Prefer exact SKU, model and part-number variants before keyword ranking.
 5. Sanitize sensitive data before constructing model context.
 6. Build a compact context from a stable core instruction, one workflow module,
@@ -43,10 +43,12 @@ The following are handled without generation:
 
 ## Catalogue retrieval
 
-The server searches the public WooCommerce Store API. It normalizes product
-identifiers, searches punctuation variants, performs keyword retrieval,
-deduplicates results, strongly prioritizes exact SKU matches and sends no more
-than five compact product records to generation.
+The server searches the public `amel-products` WordPress REST collection at
+`assetmatrixenergy.com`. It normalizes product identifiers, searches
+punctuation variants, performs keyword retrieval, deduplicates and ranks
+results, and sends no more than five compact product records to generation.
+The source does not expose live price, stock or authenticated commercial data,
+so those fields always require confirmation.
 
 Catalogue requests use Next.js' five-minute server cache. Public response
 caching also uses a five-minute default. Website price and stock labels remain

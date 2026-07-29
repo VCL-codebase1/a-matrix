@@ -6,9 +6,10 @@ import {
   identifiersEqual,
 } from "./ai/identifiers";
 
-const CATALOG_ORIGIN = "https://a-matrix.ng";
-const PRODUCTS_ENDPOINT = `${CATALOG_ORIGIN}/wp-json/wc/store/v1/products`;
+const CATALOG_ORIGIN = "https://assetmatrixenergy.com";
+const PRODUCTS_ENDPOINT = `${CATALOG_ORIGIN}/wp-json/wp/v2/amel-products`;
 const MAX_RESULTS = 4;
+const MAX_SEARCH_REQUESTS = 2;
 
 const STOP_WORDS = new Set([
   "a",
@@ -18,38 +19,28 @@ const STOP_WORDS = new Set([
   "and",
   "any",
   "are",
-  "ask",
-  "assist",
-  "assistance",
   "available",
   "can",
   "catalogue",
   "could",
-  "current",
   "details",
   "do",
-  "existing",
   "find",
   "for",
   "from",
   "get",
   "give",
-  "goodbye",
   "have",
   "hello",
   "help",
   "hi",
   "how",
-  "identify",
-  "identifying",
   "i",
-  "im",
   "in",
   "information",
   "is",
   "it",
   "item",
-  "like",
   "looking",
   "me",
   "my",
@@ -65,17 +56,14 @@ const STOP_WORDS = new Set([
   "quotation",
   "quote",
   "request",
-  "right",
   "search",
   "show",
   "some",
-  "something",
   "source",
   "support",
   "tell",
   "thanks",
   "thank",
-  "technical",
   "that",
   "the",
   "this",
@@ -86,39 +74,40 @@ const STOP_WORDS = new Set([
   "when",
   "where",
   "who",
-  "why",
   "with",
   "you",
   "your",
-  "yourself",
 ]);
 
-type StoreApiPrice = {
-  price?: string;
-  currency_code?: string;
-  currency_symbol?: string;
-  currency_minor_unit?: number;
-  currency_prefix?: string;
-  currency_suffix?: string;
+type WordPressRenderedText = {
+  rendered?: string;
 };
 
-type StoreApiProduct = {
-  id?: number;
+type WordPressTerm = {
   name?: string;
-  permalink?: string;
-  sku?: string;
-  summary?: string;
-  short_description?: string;
-  prices?: StoreApiPrice;
-  is_in_stock?: boolean;
-  is_purchasable?: boolean;
-  categories?: Array<{ name?: string }>;
-  images?: Array<{
-    src?: string;
-    thumbnail?: string;
-    alt?: string;
-    name?: string;
-  }>;
+  taxonomy?: string;
+};
+
+type WordPressMedia = {
+  source_url?: string;
+  alt_text?: string;
+  media_details?: {
+    sizes?: Record<string, { source_url?: string }>;
+  };
+};
+
+export type AssetMatrixWordPressProduct = {
+  id?: number;
+  slug?: string;
+  link?: string;
+  modified_gmt?: string;
+  title?: WordPressRenderedText;
+  content?: WordPressRenderedText;
+  excerpt?: WordPressRenderedText;
+  _embedded?: {
+    "wp:term"?: WordPressTerm[][];
+    "wp:featuredmedia"?: WordPressMedia[];
+  };
 };
 
 export type CatalogProduct = {
@@ -153,13 +142,20 @@ function decodeText(value: string): string {
     "&gt;": ">",
     "&nbsp;": " ",
     "&times;": "×",
+    "&ndash;": "–",
+    "&mdash;": "—",
   };
 
   return value
+    .replace(/<script[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style[\s\S]*?<\/style>/gi, " ")
     .replace(/<[^>]*>/g, " ")
     .replace(
-      /&(amp|quot|#039|apos|lt|gt|nbsp|times);/g,
+      /&(amp|quot|#039|apos|lt|gt|nbsp|times|ndash|mdash);/g,
       (entity) => entities[entity] ?? entity,
+    )
+    .replace(/&#x([0-9a-f]+);/gi, (_, code: string) =>
+      String.fromCodePoint(Number.parseInt(code, 16)),
     )
     .replace(/&#(\d+);/g, (_, code: string) => {
       const codePoint = Number(code);
@@ -179,8 +175,8 @@ function safeCatalogUrl(value?: string): string | null {
   try {
     const url = new URL(value);
     const isCatalogHost =
-      url.hostname === "a-matrix.ng" ||
-      url.hostname.endsWith(".a-matrix.ng");
+      url.hostname === "assetmatrixenergy.com" ||
+      url.hostname.endsWith(".assetmatrixenergy.com");
 
     return url.protocol === "https:" && isCatalogHost ? url.toString() : null;
   } catch {
@@ -188,44 +184,14 @@ function safeCatalogUrl(value?: string): string | null {
   }
 }
 
-function formatPrice(prices?: StoreApiPrice): string {
-  const rawPrice = Number(prices?.price);
-  const minorUnit = prices?.currency_minor_unit ?? 2;
-
-  if (!Number.isFinite(rawPrice) || rawPrice <= 0) {
-    return "Quotation required";
-  }
-
-  const amount = rawPrice / 10 ** minorUnit;
-  const currency = prices?.currency_code;
-
-  if (currency) {
-    try {
-      return new Intl.NumberFormat("en", {
-        style: "currency",
-        currency,
-        minimumFractionDigits: minorUnit,
-        maximumFractionDigits: minorUnit,
-      }).format(amount);
-    } catch {
-      // Fall through to the catalogue's own currency formatting.
-    }
-  }
-
-  return `${prices?.currency_prefix ?? prices?.currency_symbol ?? ""}${amount.toLocaleString("en", {
-    minimumFractionDigits: minorUnit,
-    maximumFractionDigits: minorUnit,
-  })}${prices?.currency_suffix ?? ""}`.trim();
-}
-
 function extractSearchQueries(prompt: string): {
   displayQuery: string | null;
   queries: string[];
   tokens: string[];
+  exactIdentifier: string | null;
 } {
   const quoted = prompt.match(/[“"]([^”"]{2,100})[”"]/u)?.[1]?.trim();
-  const identifier = extractExactIdentifiers(prompt)[0];
-
+  const exactIdentifier = extractExactIdentifiers(prompt)[0] ?? null;
   const sanitized = prompt
     .replace(/https?:\/\/\S+/gi, " ")
     .replace(/\b\S+@\S+\.\S+\b/g, " ")
@@ -243,15 +209,13 @@ function extractSearchQueries(prompt: string): {
         !STOP_WORDS.has(token) &&
         !/^\d+$/.test(token),
     )
-    .slice(0, 10);
+    .slice(0, 12);
 
-  const compact = tokens.join(" ").slice(0, 100).trim();
+  const compact = tokens.join(" ").slice(0, 120).trim();
   const queries = [
-    ...(identifier ? identifierVariants(identifier) : []),
+    ...(exactIdentifier ? identifierVariants(exactIdentifier) : []),
     quoted,
     compact,
-    tokens.slice(0, 3).join(" "),
-    tokens.length > 1 ? tokens[tokens.length - 1] : null,
   ]
     .filter((value): value is string => Boolean(value?.trim()))
     .map((value) => value.trim())
@@ -261,25 +225,29 @@ function extractSearchQueries(prompt: string): {
           (candidate) => candidate.toLowerCase() === value.toLowerCase(),
         ) === index,
     )
-    .slice(0, 3);
+    .slice(0, MAX_SEARCH_REQUESTS);
 
   return {
-    displayQuery: (identifier ?? quoted ?? compact) || null,
+    displayQuery: exactIdentifier ?? quoted ?? compact ?? null,
     queries,
     tokens,
+    exactIdentifier,
   };
 }
 
-async function fetchProducts(query: string): Promise<StoreApiProduct[]> {
+async function fetchProducts(
+  query: string,
+): Promise<AssetMatrixWordPressProduct[]> {
   const url = new URL(PRODUCTS_ENDPOINT);
   url.searchParams.set("search", query);
   url.searchParams.set("per_page", "8");
-  url.searchParams.set("catalog_visibility", "visible");
+  url.searchParams.set("status", "publish");
+  url.searchParams.set("_embed", "1");
 
   const response = await fetch(url, {
     headers: {
       Accept: "application/json",
-      "User-Agent": "A-Matrix-Support/1.0",
+      "User-Agent": "A-Matrix-Support/2.0",
     },
     next: { revalidate: 300 },
     signal: AbortSignal.timeout(10_000),
@@ -290,57 +258,51 @@ async function fetchProducts(query: string): Promise<StoreApiProduct[]> {
   }
 
   const data: unknown = await response.json();
-  return Array.isArray(data) ? (data as StoreApiProduct[]) : [];
+  return Array.isArray(data) ? (data as AssetMatrixWordPressProduct[]) : [];
 }
 
-function normalizeProduct(product: StoreApiProduct): CatalogProduct | null {
-  if (
-    typeof product.id !== "number" ||
-    typeof product.name !== "string" ||
-    !product.name.trim()
-  ) {
-    return null;
-  }
+export function normalizeAssetMatrixProduct(
+  product: AssetMatrixWordPressProduct,
+): CatalogProduct | null {
+  const name = decodeText(product.title?.rendered ?? "");
+  if (typeof product.id !== "number" || !name) return null;
 
-  const url = safeCatalogUrl(product.permalink);
+  const url = safeCatalogUrl(product.link);
   if (!url) return null;
 
-  const firstImage = product.images?.[0];
-  const imageUrl = safeCatalogUrl(firstImage?.thumbnail ?? firstImage?.src);
+  const terms = (product._embedded?.["wp:term"] ?? [])
+    .flat()
+    .filter((term) => !term.taxonomy || term.taxonomy === "product-cat");
+  const categories = terms
+    .map((term) => decodeText(term.name ?? ""))
+    .filter(Boolean)
+    .slice(0, 3);
+  const media = product._embedded?.["wp:featuredmedia"]?.[0];
+  const imageCandidate =
+    media?.media_details?.sizes?.medium?.source_url ??
+    media?.media_details?.sizes?.thumbnail?.source_url ??
+    media?.source_url;
+  const imageUrl = safeCatalogUrl(imageCandidate);
   const summary = decodeText(
-    product.summary ?? product.short_description ?? "",
-  ).slice(0, 280);
+    product.excerpt?.rendered ?? product.content?.rendered ?? "",
+  ).slice(0, 320);
 
   return {
     id: product.id,
-    name: decodeText(product.name),
+    name,
     url,
-    sku:
-      typeof product.sku === "string" && product.sku.trim()
-        ? product.sku.trim()
-        : null,
+    sku: null,
     summary,
-    listedPrice: formatPrice(product.prices),
-    availability: product.is_in_stock
-      ? "Website status: in stock"
-      : product.is_purchasable
-        ? "Availability requires confirmation"
-        : "Quotation or availability check required",
+    listedPrice: "Quotation required",
+    availability: "Availability requires confirmation",
     image:
-      imageUrl && firstImage
+      imageUrl && media
         ? {
             url: imageUrl,
-            alt:
-              decodeText(firstImage.alt ?? firstImage.name ?? product.name) ||
-              product.name,
+            alt: decodeText(media.alt_text ?? "") || name,
           }
         : null,
-    categories: (product.categories ?? [])
-      .map((category) =>
-        typeof category.name === "string" ? decodeText(category.name) : "",
-      )
-      .filter(Boolean)
-      .slice(0, 3),
+    categories,
   };
 }
 
@@ -348,28 +310,37 @@ function scoreProduct(
   product: CatalogProduct,
   tokens: string[],
   displayQuery: string | null,
+  exactIdentifier: string | null,
 ): number {
   const name = product.name.toLowerCase();
-  const sku = product.sku?.toLowerCase() ?? "";
+  const categories = product.categories.join(" ").toLowerCase();
   const summary = product.summary.toLowerCase();
   let score = 0;
 
-  if (displayQuery && name.includes(displayQuery.toLowerCase())) score += 50;
-  if (displayQuery && sku && identifiersEqual(sku, displayQuery)) score += 1000;
+  if (displayQuery && name.includes(displayQuery.toLowerCase())) score += 80;
+  if (
+    exactIdentifier &&
+    identifiersEqual(product.name, exactIdentifier)
+  ) {
+    score += 1000;
+  }
 
   for (const token of tokens) {
-    if (name.includes(token)) score += 12;
-    if (sku.includes(token)) score += 24;
+    if (name.includes(token)) score += 16;
+    if (categories.includes(token)) score += 6;
     if (summary.includes(token)) score += 2;
   }
 
+  if (product.summary) score += 2;
+  if (product.categories.length) score += 2;
   return score;
 }
 
 export async function searchPublishedCatalog(
   prompt: string,
 ): Promise<CatalogSearchResult> {
-  const { displayQuery, queries, tokens } = extractSearchQueries(prompt);
+  const { displayQuery, queries, tokens, exactIdentifier } =
+    extractSearchQueries(prompt);
 
   if (!displayQuery || queries.length === 0) {
     return {
@@ -380,28 +351,29 @@ export async function searchPublishedCatalog(
     };
   }
 
-  const responses = await Promise.allSettled(
-    queries.map((query) => fetchProducts(query)),
-  );
-
   const productsById = new Map<number, CatalogProduct>();
   let successfulRequest = false;
 
-  for (const response of responses) {
-    if (response.status !== "fulfilled") continue;
-    successfulRequest = true;
+  for (const query of queries) {
+    try {
+      const rawProducts = await fetchProducts(query);
+      successfulRequest = true;
+      for (const rawProduct of rawProducts) {
+        const product = normalizeAssetMatrixProduct(rawProduct);
+        if (product) productsById.set(product.id, product);
+      }
 
-    for (const rawProduct of response.value) {
-      const product = normalizeProduct(rawProduct);
-      if (product) productsById.set(product.id, product);
+      if (rawProducts.length >= MAX_RESULTS) break;
+    } catch {
+      // A second normalized query may still succeed if the site rejects one.
     }
   }
 
   const products = [...productsById.values()]
     .sort(
       (left, right) =>
-        scoreProduct(right, tokens, displayQuery) -
-        scoreProduct(left, tokens, displayQuery),
+        scoreProduct(right, tokens, displayQuery, exactIdentifier) -
+        scoreProduct(left, tokens, displayQuery, exactIdentifier),
     )
     .slice(0, MAX_RESULTS);
 
@@ -409,6 +381,6 @@ export async function searchPublishedCatalog(
     query: displayQuery,
     products,
     retrievedAt: successfulRequest ? new Date().toISOString() : null,
-    exactIdentifier: extractExactIdentifiers(prompt)[0] ?? null,
+    exactIdentifier,
   };
 }

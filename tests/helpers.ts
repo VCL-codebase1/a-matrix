@@ -37,7 +37,7 @@ export function testConfig(overrides: Partial<AIConfig> = {}): AIConfig {
 export const testProduct: CatalogProduct = {
   id: 42,
   name: "Acme ABC-123 Laboratory Meter",
-  url: "https://a-matrix.ng/product/acme-abc-123/",
+  url: "https://assetmatrixenergy.com/amel-products/acme-abc-123/",
   sku: "ABC-123",
   summary:
     "Compact laboratory meter with a clear display and configurable measurement modes.",

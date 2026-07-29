@@ -5,6 +5,7 @@ import {
   estimateTokens,
 } from "../app/lib/ai/context-builder";
 import { thinkingConfigForLevel } from "../app/lib/ai/client";
+import { normalizeAssetMatrixProduct } from "../app/lib/catalog";
 import {
   normalizeConversationState,
   updateConversationState,
@@ -120,6 +121,43 @@ describe("context budgets", () => {
 });
 
 describe("product and response serialization", () => {
+  it("normalizes the Asset Matrix Energy WordPress product schema", () => {
+    const product = normalizeAssetMatrixProduct({
+      id: 714,
+      link: "https://assetmatrixenergy.com/amel-products/transformer-meter/",
+      title: { rendered: "Transformer &amp; Winding Meter" },
+      excerpt: { rendered: "<p>Published product information.</p>" },
+      _embedded: {
+        "wp:term": [
+          [
+            {
+              name: "Test &amp; Measurement",
+              taxonomy: "product-cat",
+            },
+          ],
+        ],
+      },
+    });
+
+    expect(product).toMatchObject({
+      id: 714,
+      name: "Transformer & Winding Meter",
+      listedPrice: "Quotation required",
+      availability: "Availability requires confirmation",
+      categories: ["Test & Measurement"],
+    });
+  });
+
+  it("rejects product links outside assetmatrixenergy.com", () => {
+    expect(
+      normalizeAssetMatrixProduct({
+        id: 1,
+        link: "https://a-matrix.ng/product/example/",
+        title: { rendered: "Example" },
+      }),
+    ).toBeNull();
+  });
+
   it("creates a compact product context without raw HTML or null filler", () => {
     const result = serializeProductForAI({
       ...testProduct,
