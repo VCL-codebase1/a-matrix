@@ -198,6 +198,9 @@ describe("product and response serialization", () => {
     expect(products[0].url).toBe(
       "https://assetmatrixenergy.com/power-factor-tan-delta-test-set/",
     );
+    expect(products[0].image?.url).toBe(
+      "https://assetmatrixenergy.com/wp-content/uploads/2025/08/Kit_Bushings.jpg",
+    );
   });
 
   it("uses the verified snapshot before making a network request", async () => {

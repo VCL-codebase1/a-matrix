@@ -10,6 +10,7 @@ import { orchestrateChat } from "../../lib/ai/orchestrator";
 import { chatRequestSchema } from "../../lib/ai/request-schema";
 import { recordRateLimitEvent } from "../../lib/ai/usage";
 import { searchPublishedCatalog } from "../../lib/catalog";
+import { createChatEventStream } from "../../lib/chat-stream";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -59,13 +60,16 @@ export async function POST(request: NextRequest) {
       { searchCatalog: searchPublishedCatalog },
     );
 
-    return NextResponse.json({
-      answer: outcome.answer,
-      intent: outcome.intent,
-      nextAction: outcome.nextAction,
-      products: outcome.products,
-      conversationState: outcome.conversationState,
-    });
+    return new Response(
+      createChatEventStream(outcome, { signal: request.signal }),
+      {
+        headers: {
+          "Content-Type": "application/x-ndjson; charset=utf-8",
+          "Cache-Control": "no-cache, no-transform",
+          "X-Accel-Buffering": "no",
+        },
+      },
+    );
   } catch (error) {
     const aiError = toAIError(error);
     if (aiError.code === "RATE_LIMITED") recordRateLimitEvent();

@@ -25,7 +25,19 @@ type ChatMessage = {
   role: "user" | "assistant";
   content: string;
   products?: ProductMatch[];
+  pending?: boolean;
 };
+
+type ChatStreamEvent =
+  | {
+      type: "answer_delta";
+      text: string;
+    }
+  | {
+      type: "complete";
+      products?: ProductMatch[];
+      conversationState?: ConversationState;
+    };
 
 const STARTERS = [
   {
@@ -87,8 +99,12 @@ export default function Home() {
       content,
     };
     const nextMessages = [...messages, userMessage];
+    const assistantMessageIndex = nextMessages.length;
 
-    setMessages(nextMessages);
+    setMessages([
+      ...nextMessages,
+      { role: "assistant", content: "", products: [], pending: true },
+    ]);
     setPrompt("");
     setError("");
     setIsThinking(true);
@@ -118,30 +134,84 @@ export default function Home() {
         signal: controller.signal,
       });
 
-      const data = (await response.json()) as {
-        answer?: string;
-        error?: string;
-        products?: ProductMatch[];
-        conversationState?: ConversationState;
-      };
-
-      if (!response.ok || !data.answer) {
-        throw new Error(data.error || "We couldn’t complete that request.");
+      if (!response.ok) {
+        const data = (await response.json().catch(() => null)) as {
+          error?: string;
+        } | null;
+        throw new Error(data?.error || "We couldn’t complete that request.");
       }
 
-      setMessages((current) => [
-        ...current,
-        {
-          role: "assistant",
-          content: data.answer!,
-          products: data.products ?? [],
-        },
-      ]);
-      if (data.conversationState) {
-        conversationStateRef.current = data.conversationState;
+      if (
+        !response.body ||
+        !response.headers
+          .get("content-type")
+          ?.includes("application/x-ndjson")
+      ) {
+        throw new Error("The response stream could not be read.");
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let receivedAnswer = false;
+
+      const applyEvent = (event: ChatStreamEvent) => {
+        if (event.type === "answer_delta") {
+          receivedAnswer = true;
+          setMessages((current) =>
+            current.map((message, index) =>
+              index === assistantMessageIndex
+                ? {
+                    ...message,
+                    content: message.content + event.text,
+                  }
+                : message,
+            ),
+          );
+          return;
+        }
+
+        setMessages((current) =>
+          current.map((message, index) =>
+            index === assistantMessageIndex
+              ? {
+                  ...message,
+                  products: event.products ?? [],
+                  pending: false,
+                }
+              : message,
+          ),
+        );
+        if (event.conversationState) {
+          conversationStateRef.current = event.conversationState;
+        }
+      };
+
+      while (true) {
+        const { done, value } = await reader.read();
+        buffer += decoder.decode(value, { stream: !done });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() ?? "";
+
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          applyEvent(JSON.parse(line) as ChatStreamEvent);
+        }
+
+        if (done) break;
+      }
+
+      if (buffer.trim()) {
+        applyEvent(JSON.parse(buffer) as ChatStreamEvent);
+      }
+      if (!receivedAnswer) {
+        throw new Error("The response stream ended before an answer arrived.");
       }
     } catch (caught) {
       if (caught instanceof DOMException && caught.name === "AbortError") return;
+      setMessages((current) =>
+        current.filter((_, index) => index !== assistantMessageIndex),
+      );
       setError(
         caught instanceof Error
           ? caught.message
@@ -274,14 +344,25 @@ export default function Home() {
                 <p className="speaker">
                   {message.role === "assistant" ? "A-Matrix" : "You"}
                 </p>
-                <div className="message-copy">
-                  {message.content.split("\n").map((line, index, lines) => (
-                    <span key={`${message.role}-${messageIndex}-${index}`}>
-                      {line || "\u00A0"}
-                      {index < lines.length - 1 && <br />}
-                    </span>
-                  ))}
-                </div>
+                {message.content ? (
+                  <div className="message-copy">
+                    {message.content.split("\n").map((line, index, lines) => (
+                      <span key={`${message.role}-${messageIndex}-${index}`}>
+                        {line || "\u00A0"}
+                        {index < lines.length - 1 && <br />}
+                      </span>
+                    ))}
+                  </div>
+                ) : (
+                  message.pending && (
+                    <div
+                      className="thinking-status"
+                      aria-label="A-Matrix is preparing a response"
+                    >
+                      Checking that for you…
+                    </div>
+                  )
+                )}
 
                 {message.role === "assistant" &&
                   message.products &&
@@ -355,17 +436,6 @@ export default function Home() {
               </article>
             ))}
 
-            {isThinking && (
-              <article className="message assistant thinking">
-                <p className="speaker">A-Matrix</p>
-                <div
-                  className="thinking-status"
-                  aria-label="A-Matrix is preparing a response"
-                >
-                  Checking that for you…
-                </div>
-              </article>
-            )}
             <div ref={threadEndRef} />
           </div>
         )}

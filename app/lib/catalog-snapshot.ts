@@ -25,7 +25,10 @@ const VERIFIED_CATALOGUE: VerifiedCatalogueEntry[] = [
         "Designed for capacitance and tan delta tests on power-transformer bushings. Compatible with ISA test sets STS 5000 TD 5000, STS 4000 TD 5000 and TDX 5000. The published kit includes male-to-female and female-to-female adapters, 2.5 cm and 1.9 cm tap adapters, a bushing adapter probe, three hot-collar straps, a mini bushing tap adapter set, 1 m and 2 m non-insulated leads, a bushing tap adapter and a thermo-hygrometer. Application: power transformers.",
       listedPrice: "Quotation required",
       availability: "Availability requires confirmation",
-      image: null,
+      image: {
+        url: "https://assetmatrixenergy.com/wp-content/uploads/2025/08/Kit_Bushings.jpg",
+        alt: "Bushing Tap Adapter Kit",
+      },
       categories: [
         "Power Factor/Tan Delta Test Set",
         "Transformer Testing",
