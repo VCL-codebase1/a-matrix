@@ -1,7 +1,8 @@
 import { GoogleGenAI, type Content } from "@google/genai";
-import { env } from "cloudflare:workers";
 import { NextRequest, NextResponse } from "next/server";
 import { A_MATRIX_PERSONALITY } from "../../lib/personality";
+
+export const runtime = "nodejs";
 
 type IncomingMessage = {
   role: "user" | "assistant";
@@ -10,11 +11,6 @@ type IncomingMessage = {
 
 const MAX_MESSAGES = 40;
 const MAX_TOTAL_CHARS = 80_000;
-
-type RuntimeEnv = {
-  GEMINI_API_KEY?: string;
-  GEMINI_MODEL?: string;
-};
 
 function isValidMessage(value: unknown): value is IncomingMessage {
   if (!value || typeof value !== "object") return false;
@@ -28,9 +24,8 @@ function isValidMessage(value: unknown): value is IncomingMessage {
 
 export async function POST(request: NextRequest) {
   try {
-    const runtimeEnv = env as RuntimeEnv;
-    const apiKey = runtimeEnv.GEMINI_API_KEY;
-    const model = runtimeEnv.GEMINI_MODEL || "gemini-3.5-flash-lite";
+    const apiKey = process.env.GEMINI_API_KEY;
+    const model = process.env.GEMINI_MODEL || "gemini-3.5-flash-lite";
     if (!apiKey) {
       return NextResponse.json(
         { error: "a-matrix isn’t connected yet. Please try again shortly." },

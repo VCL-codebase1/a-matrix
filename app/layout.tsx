@@ -18,7 +18,7 @@ export async function generateMetadata(): Promise<Metadata> {
   const host =
     requestHeaders.get("x-forwarded-host") ||
     requestHeaders.get("host") ||
-    "a-matrix.openai.site";
+    "localhost:3000";
   const protocol =
     requestHeaders.get("x-forwarded-proto") ||
     (host.includes("localhost") ? "http" : "https");

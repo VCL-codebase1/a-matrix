@@ -1,9 +1,9 @@
 "use client";
 
 import { FormEvent, KeyboardEvent, useEffect, useRef, useState } from "react";
+import Link from "next/link";
 
 type ChatMessage = {
-  id: string;
   role: "user" | "assistant";
   content: string;
 };
@@ -75,7 +75,6 @@ export default function Home() {
     if (!content || isThinking) return;
 
     const userMessage: ChatMessage = {
-      id: `${Date.now()}-user`,
       role: "user",
       content,
     };
@@ -110,7 +109,6 @@ export default function Home() {
       setMessages((current) => [
         ...current,
         {
-          id: `${Date.now()}-assistant`,
           role: "assistant",
           content: data.answer!,
         },
@@ -149,14 +147,14 @@ export default function Home() {
   return (
     <main className="app-shell">
       <header className="site-header">
-        <a className="brand-lockup" href="/" aria-label="A-Matrix home">
+        <Link className="brand-lockup" href="/" aria-label="A-Matrix home">
           <span className="wordmark">
             a-matrix<span>.</span>
           </span>
           <span className="brand-descriptor">
             Technical product supply
           </span>
-        </a>
+        </Link>
 
         <div className="header-actions">
           {messages.length > 0 && (
@@ -242,14 +240,17 @@ export default function Home() {
               <span>Details stay in this conversation</span>
             </div>
 
-            {messages.map((message) => (
-              <article className={`message ${message.role}`} key={message.id}>
+            {messages.map((message, messageIndex) => (
+              <article
+                className={`message ${message.role}`}
+                key={`${message.role}-${messageIndex}`}
+              >
                 <p className="speaker">
                   {message.role === "assistant" ? "A-Matrix support" : "You"}
                 </p>
                 <div className="message-copy">
                   {message.content.split("\n").map((line, index, lines) => (
-                    <span key={`${message.id}-${index}`}>
+                    <span key={`${message.role}-${messageIndex}-${index}`}>
                       {line || "\u00A0"}
                       {index < lines.length - 1 && <br />}
                     </span>
